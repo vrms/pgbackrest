@@ -219,6 +219,8 @@ sub new
         {
             $self->{oDoc} = ${$self->{oManifest}->sourceGet($self->{strRenderOutKey})}{doc};
         }
+
+        $self->{oSource} = $self->{oManifest}->sourceGet($$oRenderOut{source});
     }
 
     if (defined($self->{strRenderOutKey}))

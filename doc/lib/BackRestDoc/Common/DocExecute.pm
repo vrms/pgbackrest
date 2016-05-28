@@ -56,6 +56,8 @@ sub new
     bless $self, $class;
 
     $self->{bExe} = $bExe;
+    $self->{bCache} = false;
+    $self->{iCacheIdx} = undef;
 
     # Return from function and log return values if any
     return logDebugReturn
@@ -102,18 +104,31 @@ sub execute
     else
     {
         # Command variables
-        $strCommand = trim($oCommand->fieldGet('exe-cmd'));
+        my $strOriginalCommand = trim($oCommand->fieldGet('exe-cmd'));
         my $strUser = $self->{oManifest}->variableReplace($oCommand->paramGet('user', false, 'postgres'));
         my $bExeOutput = $oCommand->paramTest('output', 'y');
         my $strVariableKey = $oCommand->paramGet('variable-key', false);
         my $iExeExpectedError = $oCommand->paramGet('err-expect', false);
 
+        # Add continuation chars and proper spacing
+        $strOriginalCommand =~ s/[ ]*\n[ ]*/ \\\n    /smg;
+
+        # Create cache hash
+        my @stryCommand = split("\n", $strOriginalCommand);
+
+        my $hCommand =
+        {
+            type => 'cmd',
+            key =>
+            {
+                cmd => \@stryCommand,
+                user => $strUser,
+            },
+        };
+
         $strCommand = $self->{oManifest}->variableReplace(
             ($strUser eq 'vagrant' ? '' :
-                ('sudo ' . ($strUser eq 'root' ? '' : "-u ${strUser} "))) . $strCommand);
-
-        # Add continuation chars and proper spacing
-        $strCommand =~ s/[ ]*\n[ ]*/ \\\n    /smg;
+                ('sudo ' . ($strUser eq 'root' ? '' : "-u ${strUser} "))) . $strOriginalCommand);
 
         if (!$oCommand->paramTest('show', 'n') && $self->{bExe} && $self->isRequired($oSection))
         {
@@ -165,12 +180,15 @@ sub execute
                 if (defined($iExeExpectedError))
                 {
                     $strOutput .= trim($oExec->{strErrorLog});
+                    $$hCommand{key}{err} = $iExeExpectedError;
                 }
 
                 # Output is assigned to a var
                 if (defined($strVariableKey))
                 {
                     $self->{oManifest}->variableSet($strVariableKey, trim($oExec->{strOutLog}));
+                    $$hCommand{key}{var} = $iExeExpectedError;
+                    $$hCommand{var}{$strVariableKey} = $self->{oManifest}->variableGet($strVariableKey);
                 }
                 elsif (!$oCommand->paramTest('filter', 'n') && $bExeOutput && defined($strOutput))
                 {
@@ -262,6 +280,14 @@ sub execute
 
         $oCommand->fieldSet('actual-command', $strCommand);
         $oCommand->fieldSet('actual-output', $strOutput);
+
+        if (defined($strOutput))
+        {
+            my @stryOutput = split("\n", $strOutput);
+            $$hCommand{value} = \@stryOutput;
+        }
+
+        push @{$self->{oSource}{hyCache}}, $hCommand;
     }
 
     # Return from function and log return values if any

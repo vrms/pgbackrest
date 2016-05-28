@@ -141,16 +141,16 @@ if (!-e $strOutputPath)
 
 # Load the manifest
 my $oManifest;
-my $strManifestCache = "${strOutputPath}/manifest.cache";
+my $strManifestCache = "${strBasePath}/resource/manifest.cache";
 
-if ($bUseCache && -e $strManifestCache)
-{
-    $oManifest = retrieve($strManifestCache);
-}
-else
-{
+# if ($bUseCache && -e $strManifestCache)
+# {
+#     $oManifest = retrieve($strManifestCache);
+# }
+# else
+# {
     $oManifest = new BackRestDoc::Common::DocManifest(\@stryKeyword, \@stryRequire, $oVariableOverride, $strDocPath);
-}
+# }
 
 # If no outputs were given
 if (@stryOutput == 0)
@@ -239,7 +239,7 @@ for my $strOutput (@stryOutput)
 }
 
 # Cache the manifest (mostly useful for testing rendering changes in the code)
-if (!$bUseCache)
-{
-    store($oManifest, $strManifestCache);
-}
+# if ($bUseCache)
+# {
+    $oManifest->cacheWrite($strManifestCache);
+# }

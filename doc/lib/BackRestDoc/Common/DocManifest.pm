@@ -11,6 +11,7 @@ use Cwd qw(abs_path);
 use Exporter qw(import);
     our @EXPORT = qw();
 use File::Basename qw(dirname);
+use JSON::PP;
 use Scalar::Util qw(blessed);
 
 use lib dirname($0) . '/../lib';
@@ -549,5 +550,48 @@ sub renderOutGet
         {name => 'oRenderOut', value => ${$self->{oManifest}}{render}{$strType}{out}{$strKey}}
     );
 }
+
+####################################################################################################################################
+# cacheWrite
+####################################################################################################################################
+sub cacheWrite
+{
+    my $self = shift;
+
+    # Assign function parameters, defaults, and log debug info
+    my
+    (
+        $strOperation,
+        $strCacheFile
+    ) =
+        logDebugParam
+        (
+            __PACKAGE__ . '->sourceGet', \@_,
+            {name => 'strCacheFile', trace => true}
+        );
+
+    my $hCache = undef;
+
+    foreach my $strSource (sort(keys(%{${$self->{oManifest}}{source}})))
+    {
+        my $hSource = ${$self->{oManifest}}{source}{$strSource};
+
+        if (defined($$hSource{hyCache}))
+        {
+            $$hCache{$strSource} = $$hSource{hyCache};
+            &log(WARN, "cache $strSource");
+        }
+    }
+
+    if (defined($hCache))
+    {
+        my $oJSON = JSON::PP->new()->canonical()->allow_nonref()->pretty();
+        fileStringWrite($strCacheFile, $oJSON->encode($hCache), false);
+    }
+
+    # Return from function and log return values if any
+    return logDebugReturn($strOperation);
+}
+
 
 1;
