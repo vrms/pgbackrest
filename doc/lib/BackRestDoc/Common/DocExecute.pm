@@ -68,6 +68,54 @@ sub new
 }
 
 ####################################################################################################################################
+# executeKey
+#
+# Get a unique key for the execution step to determine if the cache is valid.
+####################################################################################################################################
+sub executeKey
+{
+    my $self = shift;
+
+    # Assign function parameters, defaults, and log debug info
+    my
+    (
+        $strOperation,
+        $strHostName,
+        $oCommand,
+    ) =
+        logDebugParam
+        (
+            __PACKAGE__ . '->executeKey', \@_,
+            {name => 'strHostName', trace => true},
+            {name => 'oCommand', trace => true},
+        );
+
+    # Format and split command
+    my $strCommand = trim($oCommand->fieldGet('exe-cmd'));
+    $strCommand =~ s/[ ]*\n[ ]*/ \\\n    /smg;
+    my @stryCommand = split("\n", $strCommand);
+
+    my $hCacheKey =
+    {
+        host => $strHostName,
+        user => $self->{oManifest}->variableReplace($oCommand->paramGet('user', false, 'postgres')),
+        cmd => \@stryCommand,
+    };
+
+    if (defined($oCommand->paramGet('err-expect', false)))
+    {
+        $$hCacheKey{'err-expect'} = $oCommand->paramGet('err-expect');
+    }
+
+    # Return from function and log return values if any
+    return logDebugReturn
+    (
+        $strOperation,
+        {name => 'hExecuteKey', value => $hCacheKey, trace => true}
+    );
+}
+
+####################################################################################################################################
 # execute
 ####################################################################################################################################
 sub execute
@@ -96,6 +144,8 @@ sub execute
     my $strCommand;
     my $strOutput;
 
+    my ($bCacheHit, $strCacheType, $hCacheKey, $hCacheValue) = $self->cachePop('exe', $self->executeKey($strHostName, $oCommand));
+
     if ($oCommand->fieldTest('actual-command'))
     {
         $strCommand = $oCommand->fieldGet('actual-command');
@@ -104,31 +154,20 @@ sub execute
     else
     {
         # Command variables
-        my $strOriginalCommand = trim($oCommand->fieldGet('exe-cmd'));
-        my $strUser = $self->{oManifest}->variableReplace($oCommand->paramGet('user', false, 'postgres'));
         my $bExeOutput = $oCommand->paramTest('output', 'y');
         my $strVariableKey = $oCommand->paramGet('variable-key', false);
-        my $iExeExpectedError = $oCommand->paramGet('err-expect', false);
 
-        # Add continuation chars and proper spacing
-        $strOriginalCommand =~ s/[ ]*\n[ ]*/ \\\n    /smg;
-
-        # Create cache hash
-        my @stryCommand = split("\n", $strOriginalCommand);
-
-        my $hCommand =
+        # Create the cache entry
+        my $hExecuteCache =
         {
-            type => 'cmd',
-            key =>
-            {
-                cmd => \@stryCommand,
-                user => $strUser,
-            },
+            key => $hCacheKey,
+            type => 'execute',
         };
 
+        # Add user to run the command as
         $strCommand = $self->{oManifest}->variableReplace(
-            ($strUser eq 'vagrant' ? '' :
-                ('sudo ' . ($strUser eq 'root' ? '' : "-u ${strUser} "))) . $strOriginalCommand);
+            ($$hCacheKey{user} eq 'vagrant' ? '' :
+                ('sudo ' . ($$hCacheKey{user} eq 'root' ? '' : "-u $$hCacheKey{user} "))) . join("\n", @{$$hCacheKey{cmd}}));
 
         if (!$oCommand->paramTest('show', 'n') && $self->{bExe} && $self->isRequired($oSection))
         {
@@ -156,8 +195,10 @@ sub execute
                     confess &log(ERROR, "cannot execute on host ${strHostName} because the host does not exist");
                 }
 
+                $$hCacheValue{cmd} = $strCommand;
+
                 my $oExec = $oHost->execute($strCommand,
-                                            {iExpectedExitStatus => $iExeExpectedError,
+                                            {iExpectedExitStatus => $$hCacheKey{'err-expect'},
                                              bSuppressError => $oCommand->paramTest('err-suppress', 'y'),
                                              iRetrySeconds => $oCommand->paramGet('retry', false)});
                 $oExec->begin();
@@ -175,20 +216,20 @@ sub execute
                         $strOutput =~ s/^                             //smg;
                         $strOutput =~ s/^[0-9]{4}-[0-1][0-9]-[0-3][0-9] [0-2][0-9]:[0-6][0-9]:[0-6][0-9]\.[0-9]{3} T[0-9]{2} //smg;
                     }
+
+                    my @stryOutput = split("\n", $strOutput);
+                    $$hCacheValue{output} = \@stryOutput;
                 }
 
-                if (defined($iExeExpectedError))
+                if (defined($$hCacheKey{'err-expect'}))
                 {
                     $strOutput .= trim($oExec->{strErrorLog});
-                    $$hCommand{key}{err} = $iExeExpectedError;
                 }
 
                 # Output is assigned to a var
                 if (defined($strVariableKey))
                 {
                     $self->{oManifest}->variableSet($strVariableKey, trim($oExec->{strOutLog}));
-                    $$hCommand{key}{var} = $iExeExpectedError;
-                    $$hCommand{var}{$strVariableKey} = $self->{oManifest}->variableGet($strVariableKey);
                 }
                 elsif (!$oCommand->paramTest('filter', 'n') && $bExeOutput && defined($strOutput))
                 {
@@ -281,13 +322,7 @@ sub execute
         $oCommand->fieldSet('actual-command', $strCommand);
         $oCommand->fieldSet('actual-output', $strOutput);
 
-        if (defined($strOutput))
-        {
-            my @stryOutput = split("\n", $strOutput);
-            $$hCommand{value} = \@stryOutput;
-        }
-
-        push @{$self->{oSource}{hyCache}}, $hCommand;
+        $self->cachePush($strCacheType, $hCacheKey, $hCacheValue);
     }
 
     # Return from function and log return values if any
@@ -578,6 +613,123 @@ sub postgresConfig
 }
 
 ####################################################################################################################################
+# hostKey
+####################################################################################################################################
+sub hostKey
+{
+    my $self = shift;
+
+    # Assign function parameters, defaults, and log debug info
+    my
+    (
+        $strOperation,
+        $oHost,
+    ) =
+        logDebugParam
+        (
+            __PACKAGE__ . '->hostKey', \@_,
+            {name => 'oHost', trace => true},
+        );
+
+    my $hCacheKey =
+    {
+        name => $self->{oManifest}->variableReplace($oHost->paramGet('name')),
+        user => $self->{oManifest}->variableReplace($oHost->paramGet('user')),
+        image => $self->{oManifest}->variableReplace($oHost->paramGet('image')),
+    };
+
+    if (defined($oHost->paramGet('os', false)))
+    {
+        $$hCacheKey{os} = $self->{oManifest}->variableReplace($oHost->paramGet('os'));
+    }
+
+    if (defined($oHost->paramGet('mount', false)))
+    {
+        $$hCacheKey{mount} = $self->{oManifest}->variableReplace($oHost->paramGet('mount'));
+    }
+
+    # Return from function and log return values if any
+    return logDebugReturn
+    (
+        $strOperation,
+        {name => 'hCacheKey', value => $hCacheKey, trace => true}
+    );
+}
+
+####################################################################################################################################
+# cachePop
+####################################################################################################################################
+sub cachePop
+{
+    my $self = shift;
+
+    # Assign function parameters, defaults, and log debug info
+    my
+    (
+        $strOperation,
+        $strCacheType,
+        $hCacheKey,
+    ) =
+        logDebugParam
+        (
+            __PACKAGE__ . '->hostKey', \@_,
+            {name => 'strCacheType', trace => true},
+            {name => 'hCacheKey', trace => true},
+        );
+
+    # Return from function and log return values if any
+    return logDebugReturn
+    (
+        $strOperation,
+        {name => 'bCacheHit', value => false, trace => true},
+        {name => 'strCacheType', value => $strCacheType, trace => true},
+        {name => 'hCacheKey', value => $hCacheKey, trace => true},
+        {name => 'oCacheValue', value => undef, trace => true},
+    );
+}
+
+####################################################################################################################################
+# cachePush
+####################################################################################################################################
+sub cachePush
+{
+    my $self = shift;
+
+    # Assign function parameters, defaults, and log debug info
+    my
+    (
+        $strOperation,
+        $strType,
+        $hCacheKey,
+        $oCacheValue,
+    ) =
+        logDebugParam
+        (
+            __PACKAGE__ . '->hostKey', \@_,
+            {name => 'strType', trace => true},
+            {name => 'hCacheKey', trace => true},
+            {name => 'oCacheValue', required => false, trace => true},
+        );
+
+    # Create the cache entry
+    my $hCache =
+    {
+        key => $hCacheKey,
+        type => $strType,
+    };
+
+    if (defined($oCacheValue))
+    {
+        $$hCache{value} = $oCacheValue;
+    }
+
+    push @{$self->{oSource}{hyCache}}, $hCache;
+
+    # Return from function and log return values if any
+    return logDebugReturn($strOperation);
+}
+
+####################################################################################################################################
 # sectionChildProcesss
 ####################################################################################################################################
 sub sectionChildProcess
@@ -607,25 +759,25 @@ sub sectionChildProcess
     {
         if ($self->{bExe} && $self->isRequired($oSection) && !$oChild->paramTest('created', true))
         {
-            my $strName = $self->{oManifest}->variableReplace($oChild->paramGet('name'));
-            my $strUser = $self->{oManifest}->variableReplace($oChild->paramGet('user'));
-            my $strImage = $self->{oManifest}->variableReplace($oChild->paramGet('image'));
-            my $strOS = $self->{oManifest}->variableReplace($oChild->paramGet('os', false));
-            my $strMount = $self->{oManifest}->variableReplace($oChild->paramGet('mount', false));
+            my ($bCacheHit, $strCacheType, $hCacheKey, $hCacheValue) = $self->cachePop('host', $self->hostKey($oChild));
 
-            if (defined($self->{host}{$strName}))
+            if (defined($self->{host}{$$hCacheKey{name}}))
             {
                 confess &log(ERROR, 'cannot add host ${strName} because the host already exists');
             }
 
-            my $oHost = new pgBackRestTest::Common::HostTest($strName, $strImage, $strUser, $strOS, $strMount);
-            $self->{host}{$strName} = $oHost;
-            $self->{oManifest}->variableSet("host-${strName}-ip", $oHost->{strIP});
+            my $oHost =
+                new pgBackRestTest::Common::HostTest(
+                    $$hCacheKey{name}, $$hCacheKey{image}, $$hCacheKey{user}, $$hCacheKey{os}, $$hCacheKey{mount});
+
+            $self->{host}{$$hCacheKey{name}} = $oHost;
+            $self->{oManifest}->variableSet("host-$$hCacheKey{name}-ip", $oHost->{strIP});
+            $self->cachePush($strCacheType, $hCacheKey, $hCacheValue);
 
             # Execute cleanup commands
             foreach my $oExecute ($oChild->nodeList('execute'))
             {
-                $self->execute($oSection, $strName, $oExecute, $iDepth + 1);
+                $self->execute($oSection, $$hCacheKey{name}, $oExecute, $iDepth + 1);
             }
 
             $oHost->executeSimple("sh -c 'echo \"\" >> /etc/hosts\'", undef, 'root');
@@ -634,7 +786,7 @@ sub sectionChildProcess
             # Add all other host IPs to this host
             foreach my $strOtherHostName (sort(keys(%{$self->{host}})))
             {
-                if ($strOtherHostName ne $strName)
+                if ($strOtherHostName ne $$hCacheKey{name})
                 {
                     my $oOtherHost = $self->{host}{$strOtherHostName};
 
@@ -645,11 +797,11 @@ sub sectionChildProcess
             # Add this host IP to all other hosts
             foreach my $strOtherHostName (sort(keys(%{$self->{host}})))
             {
-                if ($strOtherHostName ne $strName)
+                if ($strOtherHostName ne $$hCacheKey{name})
                 {
                     my $oOtherHost = $self->{host}{$strOtherHostName};
 
-                    $oOtherHost->executeSimple("sh -c 'echo \"$oHost->{strIP} ${strName}\" >> /etc/hosts'", undef, 'root');
+                    $oOtherHost->executeSimple("sh -c 'echo \"$oHost->{strIP} $$hCacheKey{name}\" >> /etc/hosts'", undef, 'root');
                 }
             }
 
