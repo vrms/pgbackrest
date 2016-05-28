@@ -552,6 +552,48 @@ sub renderOutGet
 }
 
 ####################################################################################################################################
+# cacheRead
+####################################################################################################################################
+sub cacheRead
+{
+    my $self = shift;
+
+    # Assign function parameters, defaults, and log debug info
+    my
+    (
+        $strOperation,
+        $strCacheFile
+    ) =
+        logDebugParam
+        (
+            __PACKAGE__ . '->cacheRead', \@_,
+            {name => 'strCacheFile', trace => true}
+        );
+
+    my $hCache = undef;
+
+    if (fileExists($strCacheFile))
+    {
+        my $oJSON = JSON::PP->new()->allow_nonref();
+        $hCache = $oJSON->decode(fileStringRead($strCacheFile));
+
+        foreach my $strSource (sort(keys(%{${$self->{oManifest}}{source}})))
+        {
+            my $hSource = ${$self->{oManifest}}{source}{$strSource};
+
+            if (defined($$hCache{$strSource}))
+            {
+                $$hSource{hyCache} = $$hCache{$strSource};
+                &log(WARN, "cache load $strSource");
+            }
+        }
+    }
+
+    # Return from function and log return values if any
+    return logDebugReturn($strOperation);
+}
+
+####################################################################################################################################
 # cacheWrite
 ####################################################################################################################################
 sub cacheWrite
@@ -566,7 +608,7 @@ sub cacheWrite
     ) =
         logDebugParam
         (
-            __PACKAGE__ . '->sourceGet', \@_,
+            __PACKAGE__ . '->cacheWrite', \@_,
             {name => 'strCacheFile', trace => true}
         );
 
@@ -579,7 +621,7 @@ sub cacheWrite
         if (defined($$hSource{hyCache}))
         {
             $$hCache{$strSource} = $$hSource{hyCache};
-            &log(WARN, "cache $strSource");
+            &log(WARN, "cache save $strSource");
         }
     }
 

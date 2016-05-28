@@ -56,9 +56,17 @@ sub new
     my $self = $class->SUPER::new($strType, $oManifest, $strRenderOutKey);
     bless $self, $class;
 
+    if (defined($self->{oSource}{hyCache}))
+    {
+        $self->{bCache} = true;
+        $self->{iCacheIdx} = 0;
+    }
+    else
+    {
+        $self->{bCache} = false;
+    }
+
     $self->{bExe} = $bExe;
-    $self->{bCache} = false;
-    $self->{iCacheIdx} = undef;
 
     # Return from function and log return values if any
     return logDebugReturn
@@ -130,7 +138,8 @@ sub execute
         $oSection,
         $strHostName,
         $oCommand,
-        $iIndent
+        $iIndent,
+        $bCache,
     ) =
         logDebugParam
         (
@@ -138,16 +147,16 @@ sub execute
             {name => 'oSection'},
             {name => 'strHostName'},
             {name => 'oCommand'},
-            {name => 'iIndent', default => 1}
+            {name => 'iIndent', default => 1},
+            {name => 'bCache', default => true},
         );
 
     # Working variables
     my $strCommand;
     my $strOutput;
 
-    my ($bCacheHit, $strCacheType, $hCacheKey, $hCacheValue) = $self->cachePop('exe', $self->executeKey($strHostName, $oCommand));
-
     # Command variables
+    my ($bCacheHit, $strCacheType, $hCacheKey, $hCacheValue) = $self->cachePop('exe', $self->executeKey($strHostName, $oCommand));
     my $bExeOutput = $oCommand->paramTest('output', 'y');
     my $strVariableKey = $oCommand->paramGet('variable-key', false);
 
@@ -177,7 +186,7 @@ sub execute
             if ($bCacheHit)
             {
                 $strCommand = $$hCacheValue{cmd};
-                $strOutput = join("\n", @{$$hCacheValue{output}});
+                $strOutput = defined($$hCacheValue{stdout}) ? join("\n", @{$$hCacheValue{stdout}}) : undef;
             }
             else
             {
@@ -322,7 +331,10 @@ sub execute
         $self->{oManifest}->variableSet($strVariableKey, '[Test Variable]');
     }
 
-    $self->cachePush($strCacheType, $hCacheKey, $hCacheValue);
+    if ($bCache && !$bCacheHit)
+    {
+        $self->cachePush($strCacheType, $hCacheKey, $hCacheValue);
+    }
 
     # Return from function and log return values if any
     return logDebugReturn
@@ -750,14 +762,56 @@ sub cachePop
             {name => 'hCacheKey', trace => true},
         );
 
+    my $bCacheHit = false;
+    my $oCacheValue = undef;
+
+    if ($self->{bCache})
+    {
+        my $oJSON = JSON::PP->new()->canonical()->allow_nonref();
+        &log(WARN, "checking cache for\ncurrent key: " . $oJSON->encode($hCacheKey));
+
+        my $hCache = ${$self->{oSource}{hyCache}}[$self->{iCacheIdx}];
+
+        if (!defined($hCache))
+        {
+            confess &log(ERROR, 'unable to get index from cache');
+        }
+
+        if (!defined($$hCache{key}))
+        {
+            confess &log(ERROR, 'unable to get key from cache');
+        }
+
+        if (!defined($$hCache{type}))
+        {
+            confess &log(ERROR, 'unable to get type from cache');
+        }
+
+        if ($$hCache{type} ne $strCacheType)
+        {
+            confess &log(ERROR, 'types do not match, cache is invalid');
+        }
+
+
+        if ($oJSON->encode($$hCache{key}) ne $oJSON->encode($hCacheKey))
+        {
+            confess &log(ERROR, "keys at index $self->{iCacheIdx} do not match, cache is invalid.\ncache key: " . $oJSON->encode($$hCache{key}) .
+                "\ncurrent key: " . $oJSON->encode($hCacheKey));
+        }
+
+        $bCacheHit = true;
+        $oCacheValue = $$hCache{value};
+        $self->{iCacheIdx}++;
+    }
+
     # Return from function and log return values if any
     return logDebugReturn
     (
         $strOperation,
-        {name => 'bCacheHit', value => false, trace => true},
+        {name => 'bCacheHit', value => $bCacheHit, trace => true},
         {name => 'strCacheType', value => $strCacheType, trace => true},
         {name => 'hCacheKey', value => $hCacheKey, trace => true},
-        {name => 'oCacheValue', value => undef, trace => true},
+        {name => 'oCacheValue', value => $oCacheValue, trace => true},
     );
 }
 
@@ -783,6 +837,11 @@ sub cachePush
             {name => 'hCacheKey', trace => true},
             {name => 'oCacheValue', required => false, trace => true},
         );
+
+    if ($self->{bCache})
+    {
+        confess &log(ASSERT, "cachePush should not be called when cache is already present");
+    }
 
     # Create the cache entry
     my $hCache =
@@ -845,12 +904,11 @@ sub sectionChildProcess
 
             $self->{host}{$$hCacheKey{name}} = $oHost;
             $self->{oManifest}->variableSet("host-$$hCacheKey{name}-ip", $oHost->{strIP});
-            $self->cachePush($strCacheType, $hCacheKey, $hCacheValue);
 
             # Execute cleanup commands
             foreach my $oExecute ($oChild->nodeList('execute'))
             {
-                $self->execute($oSection, $$hCacheKey{name}, $oExecute, $iDepth + 1);
+                $self->execute($oSection, $$hCacheKey{name}, $oExecute, $iDepth + 1, false);
             }
 
             $oHost->executeSimple("sh -c 'echo \"\" >> /etc/hosts\'", undef, 'root');
@@ -879,6 +937,11 @@ sub sectionChildProcess
             }
 
             $oChild->paramSet('created', true);
+        }
+
+        if (!$bCacheHit)
+        {
+            $self->cachePush($strCacheType, $hCacheKey, $hCacheValue);
         }
     }
     # Skip children that have already been processed and error on others

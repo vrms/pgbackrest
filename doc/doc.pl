@@ -152,6 +152,9 @@ my $strManifestCache = "${strBasePath}/resource/manifest.cache";
     $oManifest = new BackRestDoc::Common::DocManifest(\@stryKeyword, \@stryRequire, $oVariableOverride, $strDocPath);
 # }
 
+    $oManifest->cacheRead($strManifestCache);
+
+
 # If no outputs were given
 if (@stryOutput == 0)
 {
