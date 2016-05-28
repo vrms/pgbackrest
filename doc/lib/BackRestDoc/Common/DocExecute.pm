@@ -19,6 +19,7 @@ use pgBackRest::Common::Log;
 use pgBackRest::Common::String;
 use pgBackRest::Config::Config;
 use pgBackRest::FileCommon;
+use pgBackRest::Version;
 
 use lib dirname($0) . '/../test/lib';
 use pgBackRestTest::Common::ExecuteTest;
@@ -334,6 +335,72 @@ sub execute
     );
 }
 
+
+####################################################################################################################################
+# configKey
+####################################################################################################################################
+sub configKey
+{
+    my $self = shift;
+
+    # Assign function parameters, defaults, and log debug info
+    my
+    (
+        $strOperation,
+        $oConfig,
+    ) =
+        logDebugParam
+        (
+            __PACKAGE__ . '->hostKey', \@_,
+            {name => 'oConfig', trace => true},
+        );
+
+    my $hCacheKey =
+    {
+        host => $self->{oManifest}->variableReplace($oConfig->paramGet('host')),
+        file => $oConfig->paramGet('file'),
+    };
+
+    if ($oConfig->paramTest('reset', 'y'))
+    {
+        $$hCacheKey{reset} = true;
+    }
+
+    # Add all options to the key
+    my $strOptionTag = $oConfig->nameGet() eq 'backrest-config' ? 'backrest-config-option' : 'postgres-config-option';
+
+    foreach my $oOption ($oConfig->nodeList($strOptionTag))
+    {
+        my $hOption = {};
+
+        if ($oOption->paramTest('remove', 'y'))
+        {
+            $$hOption{remove} = true;
+        }
+
+        if (defined($oOption->valueGet(false)))
+        {
+            $$hOption{value} = $oOption->valueGet();
+        }
+
+        if ($oConfig->nameGet() eq 'backrest-config')
+        {
+            $$hCacheKey{option}{$oOption->paramGet('section')}{$oOption->paramGet('key')} = $hOption;
+        }
+        else
+        {
+            $$hCacheKey{option}{$oOption->paramGet('key')} = $hOption;
+        }
+    }
+
+    # Return from function and log return values if any
+    return logDebugReturn
+    (
+        $strOperation,
+        {name => 'hCacheKey', value => $hCacheKey, trace => true}
+    );
+}
+
 ####################################################################################################################################
 # backrestConfig
 ####################################################################################################################################
@@ -360,6 +427,8 @@ sub backrestConfig
     # Working variables
     my $strFile;
     my $strConfig;
+
+    my ($bCacheHit, $strCacheType, $hCacheKey, $hCacheValue) = $self->cachePop('cfg-' . BACKREST_EXE, $self->configKey($oConfig));
 
     if ($oConfig->fieldTest('actual-file'))
     {
@@ -470,6 +539,7 @@ sub backrestConfig
 
         $oConfig->fieldSet('actual-file', $strFile);
         $oConfig->fieldSet('actual-config', $strConfig);
+        $self->cachePush($strCacheType, $hCacheKey, $hCacheValue);
     }
 
     # Return from function and log return values if any
@@ -508,6 +578,8 @@ sub postgresConfig
     # Working variables
     my $strFile;
     my $strConfig;
+
+    my ($bCacheHit, $strCacheType, $hCacheKey, $hCacheValue) = $self->cachePop('cfg-postgresql', $self->configKey($oConfig));
 
     if ($oConfig->fieldTest('actual-file'))
     {
@@ -600,6 +672,7 @@ sub postgresConfig
 
         $oConfig->fieldSet('actual-file', $strFile);
         $oConfig->fieldSet('actual-config', $strConfig);
+        $self->cachePush($strCacheType, $hCacheKey, $hCacheValue);
     }
 
     # Return from function and log return values if any
