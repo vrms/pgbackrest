@@ -147,46 +147,39 @@ sub execute
 
     my ($bCacheHit, $strCacheType, $hCacheKey, $hCacheValue) = $self->cachePop('exe', $self->executeKey($strHostName, $oCommand));
 
-    if ($oCommand->fieldTest('actual-command'))
+    # Command variables
+    my $bExeOutput = $oCommand->paramTest('output', 'y');
+    my $strVariableKey = $oCommand->paramGet('variable-key', false);
+
+    # Add user to run the command as
+    $strCommand = $self->{oManifest}->variableReplace(
+        ($$hCacheKey{user} eq 'vagrant' ? '' :
+            ('sudo ' . ($$hCacheKey{user} eq 'root' ? '' : "-u $$hCacheKey{user} "))) . join("\n", @{$$hCacheKey{cmd}}));
+
+    if (!$oCommand->paramTest('show', 'n') && $self->{bExe} && $self->isRequired($oSection))
     {
-        $strCommand = $oCommand->fieldGet('actual-command');
-        $strOutput = $oCommand->fieldGet('actual-output', false);
-    }
-    else
-    {
-        # Command variables
-        my $bExeOutput = $oCommand->paramTest('output', 'y');
-        my $strVariableKey = $oCommand->paramGet('variable-key', false);
-
-        # Create the cache entry
-        my $hExecuteCache =
+        # Make sure that no lines are greater than 80 chars
+        foreach my $strLine (split("\n", $strCommand))
         {
-            key => $hCacheKey,
-            type => 'execute',
-        };
-
-        # Add user to run the command as
-        $strCommand = $self->{oManifest}->variableReplace(
-            ($$hCacheKey{user} eq 'vagrant' ? '' :
-                ('sudo ' . ($$hCacheKey{user} eq 'root' ? '' : "-u $$hCacheKey{user} "))) . join("\n", @{$$hCacheKey{cmd}}));
-
-        if (!$oCommand->paramTest('show', 'n') && $self->{bExe} && $self->isRequired($oSection))
-        {
-            # Make sure that no lines are greater than 80 chars
-            foreach my $strLine (split("\n", $strCommand))
+            if (length(trim($strLine)) > 80)
             {
-                if (length(trim($strLine)) > 80)
-                {
-                    confess &log(ERROR, "command has a line > 80 characters:\n${strCommand}\noffending line: ${strLine}");
-                }
+                confess &log(ERROR, "command has a line > 80 characters:\n${strCommand}\noffending line: ${strLine}");
             }
         }
+    }
 
-        &log(DEBUG, ('    ' x $iIndent) . "execute: $strCommand");
+    &log(DEBUG, ('    ' x $iIndent) . "execute: $strCommand");
 
-        if (!$oCommand->paramTest('skip', 'y'))
+    if (!$oCommand->paramTest('skip', 'y'))
+    {
+        if ($self->{bExe} && $self->isRequired($oSection))
         {
-            if ($self->{bExe} && $self->isRequired($oSection))
+            if ($bCacheHit)
+            {
+                $strCommand = $$hCacheValue{cmd};
+                $strOutput = join("\n", @{$$hCacheValue{output}});
+            }
+            else
             {
                 # Check that the host is valid
                 my $oHost = $self->{host}{$strHostName};
@@ -205,7 +198,7 @@ sub execute
                 $oExec->begin();
                 $oExec->end();
 
-                if ($bExeOutput && defined($oExec->{strOutLog}) && $oExec->{strOutLog} ne '')
+                if (defined($oExec->{strOutLog}) && $oExec->{strOutLog} ne '')
                 {
                     $strOutput = $oExec->{strOutLog};
 
@@ -219,112 +212,117 @@ sub execute
                     }
 
                     my @stryOutput = split("\n", $strOutput);
-                    $$hCacheValue{output} = \@stryOutput;
+                    $$hCacheValue{stdout} = \@stryOutput;
                 }
 
-                if (defined($$hCacheKey{'err-expect'}))
+                if (defined($$hCacheKey{'err-expect'}) && defined($oExec->{strErrorLog}) && $oExec->{strErrorLog} ne '')
                 {
-                    $strOutput .= trim($oExec->{strErrorLog});
-                }
-
-                # Output is assigned to a var
-                if (defined($strVariableKey))
-                {
-                    $self->{oManifest}->variableSet($strVariableKey, trim($oExec->{strOutLog}));
-                }
-                elsif (!$oCommand->paramTest('filter', 'n') && $bExeOutput && defined($strOutput))
-                {
-                    my $strHighLight = $self->{oManifest}->variableReplace($oCommand->fieldGet('exe-highlight', false));
-
-                    if (!defined($strHighLight))
-                    {
-                        confess &log(ERROR, 'filter requires highlight definition: ' . $strCommand);
-                    }
-
-                    my $iFilterContext = $oCommand->paramGet('filter-context', false, 2);
-
-                    my @stryOutput = split("\n", $strOutput);
-                    undef($strOutput);
-                    # my $iFiltered = 0;
-                    my $iLastOutput = -1;
-
-                    for (my $iIndex = 0; $iIndex < @stryOutput; $iIndex++)
-                    {
-                        if ($stryOutput[$iIndex] =~ /$strHighLight/)
-                        {
-                            # Determine the first line to output
-                            my $iFilterFirst = $iIndex - $iFilterContext;
-
-                            # Don't go past the beginning
-                            $iFilterFirst = $iFilterFirst < 0 ? 0 : $iFilterFirst;
-
-                            # Don't repeat lines that have already been output
-                            $iFilterFirst  = $iFilterFirst <= $iLastOutput ? $iLastOutput + 1 : $iFilterFirst;
-
-                            # Determine the last line to output
-                            my $iFilterLast = $iIndex + $iFilterContext;
-
-                            # Don't got past the end
-                            $iFilterLast = $iFilterLast >= @stryOutput ? @stryOutput -1 : $iFilterLast;
-
-                            # Mark filtered lines if any
-                            if ($iFilterFirst > $iLastOutput + 1)
-                            {
-                                my $iFiltered = $iFilterFirst - ($iLastOutput + 1);
-
-                                if ($iFiltered > 1)
-                                {
-                                    $strOutput .= (defined($strOutput) ? "\n" : '') .
-                                                  "       [filtered ${iFiltered} lines of output]";
-                                }
-                                else
-                                {
-                                    $iFilterFirst -= 1;
-                                }
-                            }
-
-                            # Output the lines
-                            for (my $iOutputIndex = $iFilterFirst; $iOutputIndex <= $iFilterLast; $iOutputIndex++)
-                            {
-                                    $strOutput .= (defined($strOutput) ? "\n" : '') . $stryOutput[$iOutputIndex];
-                            }
-
-                            $iLastOutput = $iFilterLast;
-                        }
-                    }
-
-                    if (@stryOutput - 1 > $iLastOutput + 1)
-                    {
-                        my $iFiltered = (@stryOutput - 1) - ($iLastOutput + 1);
-
-                        if ($iFiltered > 1)
-                        {
-                            $strOutput .= (defined($strOutput) ? "\n" : '') .
-                                          "       [filtered ${iFiltered} lines of output]";
-                        }
-                        else
-                        {
-                            $strOutput .= (defined($strOutput) ? "\n" : '') . $stryOutput[@stryOutput - 1];
-                        }
-                    }
+                    my $strError = $oExec->{strErrorLog};
+                    $strError =~ s/^\n+|\n$//g;
+                    my @stryError = split("\n", $strError);
+                    $$hCacheValue{stderr} = \@stryError;
                 }
             }
-            elsif ($bExeOutput)
+
+            if (defined($$hCacheValue{stderr}))
             {
-                $strOutput = 'Output suppressed for testing';
+                $strOutput .= join("\n", @{$$hCacheValue{stderr}});
+            }
+
+            # Output is assigned to a var
+            if (defined($strVariableKey))
+            {
+                $self->{oManifest}->variableSet($strVariableKey, trim($strOutput));
+            }
+            elsif (!$oCommand->paramTest('filter', 'n') && $bExeOutput && defined($strOutput))
+            {
+                my $strHighLight = $self->{oManifest}->variableReplace($oCommand->fieldGet('exe-highlight', false));
+
+                if (!defined($strHighLight))
+                {
+                    confess &log(ERROR, 'filter requires highlight definition: ' . $strCommand);
+                }
+
+                my $iFilterContext = $oCommand->paramGet('filter-context', false, 2);
+
+                my @stryOutput = split("\n", $strOutput);
+                undef($strOutput);
+                # my $iFiltered = 0;
+                my $iLastOutput = -1;
+
+                for (my $iIndex = 0; $iIndex < @stryOutput; $iIndex++)
+                {
+                    if ($stryOutput[$iIndex] =~ /$strHighLight/)
+                    {
+                        # Determine the first line to output
+                        my $iFilterFirst = $iIndex - $iFilterContext;
+
+                        # Don't go past the beginning
+                        $iFilterFirst = $iFilterFirst < 0 ? 0 : $iFilterFirst;
+
+                        # Don't repeat lines that have already been output
+                        $iFilterFirst  = $iFilterFirst <= $iLastOutput ? $iLastOutput + 1 : $iFilterFirst;
+
+                        # Determine the last line to output
+                        my $iFilterLast = $iIndex + $iFilterContext;
+
+                        # Don't got past the end
+                        $iFilterLast = $iFilterLast >= @stryOutput ? @stryOutput -1 : $iFilterLast;
+
+                        # Mark filtered lines if any
+                        if ($iFilterFirst > $iLastOutput + 1)
+                        {
+                            my $iFiltered = $iFilterFirst - ($iLastOutput + 1);
+
+                            if ($iFiltered > 1)
+                            {
+                                $strOutput .= (defined($strOutput) ? "\n" : '') .
+                                              "       [filtered ${iFiltered} lines of output]";
+                            }
+                            else
+                            {
+                                $iFilterFirst -= 1;
+                            }
+                        }
+
+                        # Output the lines
+                        for (my $iOutputIndex = $iFilterFirst; $iOutputIndex <= $iFilterLast; $iOutputIndex++)
+                        {
+                                $strOutput .= (defined($strOutput) ? "\n" : '') . $stryOutput[$iOutputIndex];
+                        }
+
+                        $iLastOutput = $iFilterLast;
+                    }
+                }
+
+                if (@stryOutput - 1 > $iLastOutput + 1)
+                {
+                    my $iFiltered = (@stryOutput - 1) - ($iLastOutput + 1);
+
+                    if ($iFiltered > 1)
+                    {
+                        $strOutput .= (defined($strOutput) ? "\n" : '') .
+                                      "       [filtered ${iFiltered} lines of output]";
+                    }
+                    else
+                    {
+                        $strOutput .= (defined($strOutput) ? "\n" : '') . $stryOutput[@stryOutput - 1];
+                    }
+                }
             }
         }
-
-        if (defined($strVariableKey) && !defined($self->{oManifest}->variableGet($strVariableKey)))
+        elsif ($bExeOutput)
         {
-            $self->{oManifest}->variableSet($strVariableKey, '[Test Variable]');
+            $strOutput = 'Output suppressed for testing';
         }
-
-        $oCommand->fieldSet('actual-command', $strCommand);
-        $oCommand->fieldSet('actual-output', $strOutput);
-
-        $self->cachePush($strCacheType, $hCacheKey, $hCacheValue);
     }
+
+    if (defined($strVariableKey) && !defined($self->{oManifest}->variableGet($strVariableKey)))
+    {
+        $self->{oManifest}->variableSet($strVariableKey, '[Test Variable]');
+    }
+
+    $self->cachePush($strCacheType, $hCacheKey, $hCacheValue);
 
     # Return from function and log return values if any
     return logDebugReturn
@@ -430,10 +428,10 @@ sub backrestConfig
 
     my ($bCacheHit, $strCacheType, $hCacheKey, $hCacheValue) = $self->cachePop('cfg-' . BACKREST_EXE, $self->configKey($oConfig));
 
-    if ($oConfig->fieldTest('actual-file'))
+    if ($bCacheHit)
     {
-        $strFile = $oConfig->fieldGet('actual-file');
-        $strConfig = $oConfig->fieldGet('actual-config');
+        $strFile = $$hCacheValue{file};
+        $strConfig = join("\n", @{$$hCacheValue{config}});
     }
     else
     {
@@ -537,8 +535,9 @@ sub backrestConfig
             $strConfig = 'Config suppressed for testing';
         }
 
-        $oConfig->fieldSet('actual-file', $strFile);
-        $oConfig->fieldSet('actual-config', $strConfig);
+        $$hCacheValue{file} = $strFile;
+        my @stryConfig = split("\n", $strConfig);
+        $$hCacheValue{config} = \@stryConfig;
         $self->cachePush($strCacheType, $hCacheKey, $hCacheValue);
     }
 
@@ -581,10 +580,10 @@ sub postgresConfig
 
     my ($bCacheHit, $strCacheType, $hCacheKey, $hCacheValue) = $self->cachePop('cfg-postgresql', $self->configKey($oConfig));
 
-    if ($oConfig->fieldTest('actual-file'))
+    if ($bCacheHit)
     {
-        $strFile = $oConfig->fieldGet('actual-file');
-        $strConfig = $oConfig->fieldGet('actual-config');
+        $strFile = $$hCacheValue{file};
+        $strConfig = join("\n", @{$$hCacheValue{config}});
     }
     else
     {
@@ -670,8 +669,9 @@ sub postgresConfig
             $strConfig = 'Config suppressed for testing';
         }
 
-        $oConfig->fieldSet('actual-file', $strFile);
-        $oConfig->fieldSet('actual-config', $strConfig);
+        $$hCacheValue{file} = $strFile;
+        my @stryConfig = split("\n", $strConfig);
+        $$hCacheValue{config} = \@stryConfig;
         $self->cachePush($strCacheType, $hCacheKey, $hCacheValue);
     }
 
@@ -830,10 +830,10 @@ sub sectionChildProcess
     # Execute a command
     if ($oChild->nameGet() eq 'host-add')
     {
-        if ($self->{bExe} && $self->isRequired($oSection) && !$oChild->paramTest('created', true))
-        {
-            my ($bCacheHit, $strCacheType, $hCacheKey, $hCacheValue) = $self->cachePop('host', $self->hostKey($oChild));
+        my ($bCacheHit, $strCacheType, $hCacheKey, $hCacheValue) = $self->cachePop('host', $self->hostKey($oChild));
 
+        if (!$bCacheHit && $self->{bExe} && $self->isRequired($oSection) && !$oChild->paramTest('created', true))
+        {
             if (defined($self->{host}{$$hCacheKey{name}}))
             {
                 confess &log(ERROR, 'cannot add host ${strName} because the host already exists');
