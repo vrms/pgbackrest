@@ -594,6 +594,32 @@ sub cacheRead
 }
 
 ####################################################################################################################################
+# cacheReset
+####################################################################################################################################
+sub cacheReset
+{
+    my $self = shift;
+
+    # Assign function parameters, defaults, and log debug info
+    my
+    (
+        $strOperation,
+        $strSource
+    ) =
+        logDebugParam
+        (
+            __PACKAGE__ . '->cacheReset', \@_,
+            {name => 'strSource', trace => true}
+        );
+
+    &log(WARN, "Cache will be reset for source ${strSource} and the render retried automatically");
+    delete(${$self->{oManifest}}{source}{$strSource}{hyCache});
+
+    # Return from function and log return values if any
+    return logDebugReturn($strOperation);
+}
+
+####################################################################################################################################
 # cacheWrite
 ####################################################################################################################################
 sub cacheWrite
@@ -634,6 +660,5 @@ sub cacheWrite
     # Return from function and log return values if any
     return logDebugReturn($strOperation);
 }
-
 
 1;
