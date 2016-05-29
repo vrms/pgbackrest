@@ -53,7 +53,7 @@ doc.pl [options]
    --log-level      Log level for execution (e.g. ERROR, WARN, INFO, DEBUG)
    --deploy         Write exe.cache into resource for persistence
    --no-exe         Should commands be executed when building help? (for testing only)
-   --use-cache      Use cached data to generate the docs (for testing textual changes only)
+   --no-cache       Don't use execution cache
    --var            Override variables defined in the XML
    --doc-path       Document path to render (manifest.xml should be located here)
    --out            Output types (html, pdf, markdown)
@@ -69,7 +69,7 @@ my $bVersion = false;
 my $bQuiet = false;
 my $strLogLevel = 'info';
 my $bNoExe = false;
-my $bUseCache = false;
+my $bNoCache = false;
 my $oVariableOverride = {};
 my $strDocPath;
 my @stryOutput;
@@ -86,7 +86,7 @@ GetOptions ('help' => \$bHelp,
             'require=s@' => \@stryRequire,
             'no-exe', \$bNoExe,
             'deploy', \$bDeploy,
-            'use-cache', \$bUseCache,
+            'no-cache', \$bNoCache,
             'var=s%', $oVariableOverride,
             'doc-path=s', \$strDocPath)
     or pod2usage(2);
@@ -105,10 +105,10 @@ if ($bHelp || $bVersion)
     exit 0;
 }
 
-# Set no-exe if use-cache is set
-if ($bUseCache)
+# Disable cache when no exe
+if ($bNoExe)
 {
-    $bNoExe = true;
+    $bNoCache = true;
 }
 
 # Set console log level
@@ -146,17 +146,12 @@ if (!-e $strOutputPath)
 my $oManifest;
 my $strManifestCache = "${strBasePath}/resource/manifest.cache";
 
-# if ($bUseCache && -e $strManifestCache)
-# {
-#     $oManifest = retrieve($strManifestCache);
-# }
-# else
-# {
-    $oManifest = new BackRestDoc::Common::DocManifest(\@stryKeyword, \@stryRequire, $oVariableOverride, $strDocPath);
-# }
+$oManifest = new BackRestDoc::Common::DocManifest(\@stryKeyword, \@stryRequire, $oVariableOverride, $strDocPath);
 
+if (!$bNoCache)
+{
     $oManifest->cacheRead($bDeploy);
-
+}
 
 # If no outputs were given
 if (@stryOutput == 0)
@@ -245,7 +240,7 @@ for my $strOutput (@stryOutput)
 }
 
 # Cache the manifest (mostly useful for testing rendering changes in the code)
-# if ($bUseCache)
-# {
+if (!$bNoCache)
+{
     $oManifest->cacheWrite($bDeploy);
-# }
+}
