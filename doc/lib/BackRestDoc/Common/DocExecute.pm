@@ -100,7 +100,7 @@ sub executeKey
         );
 
     # Format and split command
-    my $strCommand = trim($oCommand->fieldGet('exe-cmd'));
+    my $strCommand = $self->{oManifest}->variableReplace(trim($oCommand->fieldGet('exe-cmd')));
     $strCommand =~ s/[ ]*\n[ ]*/ \\\n    /smg;
     my @stryCommand = split("\n", $strCommand);
 
@@ -161,9 +161,9 @@ sub execute
     my $strVariableKey = $oCommand->paramGet('variable-key', false);
 
     # Add user to run the command as
-    $strCommand = $self->{oManifest}->variableReplace(
+    $strCommand =
         ($$hCacheKey{user} eq 'vagrant' ? '' :
-            ('sudo ' . ($$hCacheKey{user} eq 'root' ? '' : "-u $$hCacheKey{user} "))) . join("\n", @{$$hCacheKey{cmd}}));
+            ('sudo ' . ($$hCacheKey{user} eq 'root' ? '' : "-u $$hCacheKey{user} "))) . join("\n", @{$$hCacheKey{cmd}});
 
     if (!$oCommand->paramTest('show', 'n') && $self->{bExe} && $self->isRequired($oSection))
     {
@@ -903,7 +903,11 @@ sub sectionChildProcess
         {
             my ($bCacheHit, $strCacheType, $hCacheKey, $hCacheValue) = $self->cachePop('host', $self->hostKey($oChild));
 
-            if (!$bCacheHit)
+            if ($bCacheHit)
+            {
+                $self->{oManifest}->variableSet("host-$$hCacheKey{name}-ip", $$hCacheValue{ip}, true);
+            }
+            else
             {
                 if (defined($self->{host}{$$hCacheKey{name}}))
                 {
@@ -916,6 +920,7 @@ sub sectionChildProcess
 
                 $self->{host}{$$hCacheKey{name}} = $oHost;
                 $self->{oManifest}->variableSet("host-$$hCacheKey{name}-ip", $oHost->{strIP}, true);
+                $$hCacheValue{ip} = $oHost->{strIP};
 
                 # Execute cleanup commands
                 foreach my $oExecute ($oChild->nodeList('execute'))
