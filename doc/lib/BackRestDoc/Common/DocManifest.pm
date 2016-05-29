@@ -570,20 +570,21 @@ sub cacheRead
             {name => 'strCacheFile', trace => true}
         );
 
-    my $hCache = undef;
+    $self->{hCache} = undef;
 
     if (fileExists($strCacheFile))
     {
+        my ($strKeyword, $strRequire) = $self->cacheKey();
         my $oJSON = JSON::PP->new()->allow_nonref();
-        $hCache = $oJSON->decode(fileStringRead($strCacheFile));
+        $self->{hCache} = $oJSON->decode(fileStringRead($strCacheFile));
 
         foreach my $strSource (sort(keys(%{${$self->{oManifest}}{source}})))
         {
             my $hSource = ${$self->{oManifest}}{source}{$strSource};
 
-            if (defined($$hCache{$strSource}))
+            if (defined(${$self->{hCache}}{$strKeyword}{$strRequire}{$strSource}))
             {
-                $$hSource{hyCache} = $$hCache{$strSource};
+                $$hSource{hyCache} = ${$self->{hCache}}{$strKeyword}{$strRequire}{$strSource};
                 &log(WARN, "cache load $strSource");
             }
         }
@@ -638,7 +639,7 @@ sub cacheWrite
             {name => 'strCacheFile', trace => true}
         );
 
-    my $hCache = undef;
+    my ($strKeyword, $strRequire) = $self->cacheKey();
 
     foreach my $strSource (sort(keys(%{${$self->{oManifest}}{source}})))
     {
@@ -646,19 +647,38 @@ sub cacheWrite
 
         if (defined($$hSource{hyCache}))
         {
-            $$hCache{$strSource} = $$hSource{hyCache};
+            ${$self->{hCache}}{$strKeyword}{$strRequire}{$strSource} = $$hSource{hyCache};
             &log(WARN, "cache save $strSource");
         }
     }
 
-    if (defined($hCache))
+    if (defined($self->{hCache}))
     {
         my $oJSON = JSON::PP->new()->canonical()->allow_nonref()->pretty();
-        fileStringWrite($strCacheFile, $oJSON->encode($hCache), false);
+        fileStringWrite($strCacheFile, $oJSON->encode($self->{hCache}), false);
     }
 
     # Return from function and log return values if any
     return logDebugReturn($strOperation);
+}
+
+####################################################################################################################################
+# cacheKey
+####################################################################################################################################
+sub cacheKey
+{
+    my $self = shift;
+
+    # Assign function parameters, defaults, and log debug info
+    my ($strOperation) = logDebugParam(__PACKAGE__ . '->cacheKey');
+
+    # Return from function and log return values if any
+    return logDebugReturn
+    (
+        $strOperation,
+        {name => 'strKeyword', value => join("\n", @{$self->{stryKeyword}})},
+        {name => 'strRequire', value => defined($self->{stryRequire}) ? join("\n", @{$self->{stryRequire}}) : 'all'},
+    );
 }
 
 1;
