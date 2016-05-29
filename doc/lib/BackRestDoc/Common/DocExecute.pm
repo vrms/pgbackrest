@@ -326,6 +326,11 @@ sub execute
                     }
                 }
             }
+
+            if (!$bExeOutput)
+            {
+                $strOutput = undef;
+            }
         }
         elsif ($bExeOutput)
         {
