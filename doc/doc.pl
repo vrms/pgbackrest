@@ -51,6 +51,7 @@ doc.pl [options]
    --version        Display pgBackRest version
    --quiet          Sets log level to ERROR
    --log-level      Log level for execution (e.g. ERROR, WARN, INFO, DEBUG)
+   --deploy         Write exe.cache into resource for persistence
    --no-exe         Should commands be executed when building help? (for testing only)
    --use-cache      Use cached data to generate the docs (for testing textual changes only)
    --var            Override variables defined in the XML
@@ -74,6 +75,7 @@ my $strDocPath;
 my @stryOutput;
 my @stryKeyword;
 my @stryRequire;
+my $bDeploy = false;
 
 GetOptions ('help' => \$bHelp,
             'version' => \$bVersion,
@@ -83,6 +85,7 @@ GetOptions ('help' => \$bHelp,
             'keyword=s@' => \@stryKeyword,
             'require=s@' => \@stryRequire,
             'no-exe', \$bNoExe,
+            'deploy', \$bDeploy,
             'use-cache', \$bUseCache,
             'var=s%', $oVariableOverride,
             'doc-path=s', \$strDocPath)
@@ -152,7 +155,7 @@ my $strManifestCache = "${strBasePath}/resource/manifest.cache";
     $oManifest = new BackRestDoc::Common::DocManifest(\@stryKeyword, \@stryRequire, $oVariableOverride, $strDocPath);
 # }
 
-    $oManifest->cacheRead($strManifestCache);
+    $oManifest->cacheRead($bDeploy);
 
 
 # If no outputs were given
@@ -244,5 +247,5 @@ for my $strOutput (@stryOutput)
 # Cache the manifest (mostly useful for testing rendering changes in the code)
 # if ($bUseCache)
 # {
-    $oManifest->cacheWrite($strManifestCache);
+    $oManifest->cacheWrite($bDeploy);
 # }

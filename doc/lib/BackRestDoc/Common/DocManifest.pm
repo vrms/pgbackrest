@@ -55,7 +55,8 @@ sub new
         $self->{stryKeyword},
         $self->{stryRequire},
         my $oVariableOverride,
-        $self->{strDocPath}
+        $self->{strDocPath},
+        $self->{bDeploy},
     ) =
         logDebugParam
         (
@@ -64,6 +65,7 @@ sub new
             {name => 'stryRequire'},
             {name => 'oVariableOverride', required => false},
             {name => 'strDocPath', required => false},
+            {name => 'bDeploy', required => false},
         );
 
     # Set the base path if it was not passed in
@@ -562,15 +564,22 @@ sub cacheRead
     my
     (
         $strOperation,
-        $strCacheFile
+        $bDeploy,
     ) =
         logDebugParam
         (
             __PACKAGE__ . '->cacheRead', \@_,
-            {name => 'strCacheFile', trace => true}
+            {name => 'bDeploy', trace => true},
         );
 
     $self->{hCache} = undef;
+
+    my $strCacheFile = $self->{strDocPath} . "/resource/exe.cache";
+
+    if (!fileExists($strCacheFile) && !$bDeploy)
+    {
+        $strCacheFile = $self->{strDocPath} . "/output/exe.cache";
+    }
 
     if (fileExists($strCacheFile))
     {
@@ -631,14 +640,15 @@ sub cacheWrite
     my
     (
         $strOperation,
-        $strCacheFile
+        $bDeploy,
     ) =
         logDebugParam
         (
             __PACKAGE__ . '->cacheWrite', \@_,
-            {name => 'strCacheFile', trace => true}
+            {name => 'bDeploy', trace => true},
         );
 
+    my $strCacheFile = $bDeploy ? $self->{strDocPath} . "/resource/exe.cache" : $self->{strDocPath} . "/output/exe.cache";
     my ($strKeyword, $strRequire) = $self->cacheKey();
 
     foreach my $strSource (sort(keys(%{${$self->{oManifest}}{source}})))
