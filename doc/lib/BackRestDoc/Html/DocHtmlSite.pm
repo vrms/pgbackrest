@@ -122,10 +122,13 @@ sub process
     {
         &log(INFO, "    render out: ${strPageId}");
 
+        my $strHtml;
+
         eval
         {
-            $self->{oManifest}->variableReplace(
-                (new BackRestDoc::Html::DocHtmlPage($self->{oManifest}, $strPageId, $self->{bExe}))->process());
+            $strHtml =
+                $self->{oManifest}->variableReplace(
+                    (new BackRestDoc::Html::DocHtmlPage($self->{oManifest}, $strPageId, $self->{bExe}))->process());
         };
 
         if ($@)
@@ -137,16 +140,15 @@ sub process
             {
                 my $oRenderOut = $self->{oManifest}->renderOutGet(RENDER_TYPE_HTML, $strPageId);
                 $self->{oManifest}->cacheReset($$oRenderOut{source});
-                $self->{oManifest}->variableReplace(
-                    (new BackRestDoc::Html::DocHtmlPage($self->{oManifest}, $strPageId, $self->{bExe}))->process());
+
+                $strHtml =
+                    $self->{oManifest}->variableReplace(
+                        (new BackRestDoc::Html::DocHtmlPage($self->{oManifest}, $strPageId, $self->{bExe}))->process());
             }
         }
 
         # Save the html page
-        fileStringWrite("$self->{strHtmlPath}/${strPageId}.html",
-                        $self->{oManifest}->variableReplace((new BackRestDoc::Html::DocHtmlPage($self->{oManifest},
-                            $strPageId, $self->{bExe}))->process()),
-                        false);
+        fileStringWrite("$self->{strHtmlPath}/${strPageId}.html", $strHtml, false);
     }
 
     # Return from function and log return values if any
