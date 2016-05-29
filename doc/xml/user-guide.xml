@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE doc SYSTEM "doc.dtd">
-<doc title="User Guide" subtitle="Ubuntu 12.04 &amp; 14.04 / {[postgres]} 9.4">
+<doc title="User Guide" subtitle="Debian &amp; Ubuntu / {[postgres]} 9.4">
     <description>The {[project]} User Guide demonstrates how to quickly and easily setup {[project]} for your {[postgres]} database. Step-by-step instructions lead the user through all the important features of the fastest, most reliable {[postgres]} backup and restore solution.</description>
 
     <variable-list>
@@ -86,7 +86,7 @@
 
         <p>This user guide is intended to be followed sequentially from beginning to end &amp;mdash; each section depends on the last.  For example the <link section="/backup">Backup</link> section relies on setup that is performed in the <link section="/quickstart">Quick Start</link> section.  Once you have <backrest/> up and running then skipping around is possible but it is recommended to follow the user guide in order the first time through.</p>
 
-        <p>Although the examples are targeted at Ubuntu and <postgres/> 9.4 they will also work fine on Debian and it should be fairly easy to apply this guide to any Unix distribution and <postgres/> version but note that only 64-bit distributions are currently supported due to 64-bit operations in the Perl code.  The only OS-specific commands are those to create, start, stop, and drop <postgres/> clusters.  The <backrest/> commands will be the same on any Unix system though the locations to install Perl libraries and executables may vary.
+        <p>Although the examples are targeted at Debian/Ubuntu and <postgres/> 9.4, it should be fairly easy to apply this guide to any Unix distribution and <postgres/> version but note that only 64-bit distributions are currently supported due to 64-bit operations in the Perl code.  The only OS-specific commands are those to create, start, stop, and drop <postgres/> clusters.  The <backrest/> commands will be the same on any Unix system though the locations to install Perl libraries and executables may vary.
 
         Configuration information and documentation for PostgreSQL can be found in the <postgres/> <link url='http://www.postgresql.org/docs/9.4/static/index.html'>Manual</link>.</p>
 
