@@ -672,12 +672,16 @@ sub cacheKey
     # Assign function parameters, defaults, and log debug info
     my ($strOperation) = logDebugParam(__PACKAGE__ . '->cacheKey');
 
+    my $strKeyword = join("\n", @{$self->{stryKeyword}});
+    my $strRequire = defined($self->{stryRequire}) && @{$self->{stryRequire}} > 0 ?
+        join("\n", @{$self->{stryRequire}}) : 'all';
+
     # Return from function and log return values if any
     return logDebugReturn
     (
         $strOperation,
-        {name => 'strKeyword', value => join("\n", @{$self->{stryKeyword}})},
-        {name => 'strRequire', value => defined($self->{stryRequire}) ? join("\n", @{$self->{stryRequire}}) : 'all'},
+        {name => 'strKeyword', value => $strKeyword},
+        {name => 'strRequire', value => $strRequire},
     );
 }
 
