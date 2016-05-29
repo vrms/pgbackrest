@@ -248,7 +248,7 @@ sub execute
             # Output is assigned to a var
             if (defined($strVariableKey))
             {
-                $self->{oManifest}->variableSet($strVariableKey, trim($strOutput));
+                $self->{oManifest}->variableSet($strVariableKey, trim($strOutput), true);
             }
             elsif (!$oCommand->paramTest('filter', 'n') && $bExeOutput && defined($strOutput))
             {
@@ -335,7 +335,7 @@ sub execute
 
     if (defined($strVariableKey) && !defined($self->{oManifest}->variableGet($strVariableKey)))
     {
-        $self->{oManifest}->variableSet($strVariableKey, '[Test Variable]');
+        $self->{oManifest}->variableSet($strVariableKey, '[Test Variable]', true);
     }
 
     # Return from function and log return values if any
@@ -915,7 +915,7 @@ sub sectionChildProcess
                         $$hCacheKey{name}, $$hCacheKey{image}, $$hCacheKey{user}, $$hCacheKey{os}, $$hCacheKey{mount});
 
                 $self->{host}{$$hCacheKey{name}} = $oHost;
-                $self->{oManifest}->variableSet("host-$$hCacheKey{name}-ip", $oHost->{strIP});
+                $self->{oManifest}->variableSet("host-$$hCacheKey{name}-ip", $oHost->{strIP}, true);
 
                 # Execute cleanup commands
                 foreach my $oExecute ($oChild->nodeList('execute'))
