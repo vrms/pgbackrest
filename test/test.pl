@@ -198,7 +198,7 @@ if (!defined($strTestPath))
 }
 
 # Get the base backrest path
-my $strBackRestBase = dirname(dirname(abspath($0)));
+my $strBackRestBase = dirname(dirname(abs_path($0)));
 
 ####################################################################################################################################
 # Build Docker containers
