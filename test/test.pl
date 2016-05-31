@@ -622,7 +622,7 @@ eval
 
                         executeTest("docker run -itd -h $$oTest{os}-test --name=${strImage}" .
                                     " -v ${strHostTestPath}:${strVmTestPath}" .
-                                    " -v ${strBackRestBase}:/backrest backrest/$$oTest{os}-test-${strDbVersion}");
+                                    " -v ${strBackRestBase}:${strBackRestBase} backrest/$$oTest{os}-test-${strDbVersion}");
                     }
 
                     # Build up command line for the individual test
