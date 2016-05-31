@@ -266,7 +266,7 @@ eval
     }
 
     # Cache the manifest (mostly useful for testing rendering changes in the code)
-    if (!$bNoCache)
+    if (!$bNoCache && !$bCacheOnly)
     {
         $oManifest->cacheWrite();
     }
