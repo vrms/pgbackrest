@@ -272,7 +272,7 @@ sub variableListParse
             if ($self->keywordMatch($oVariable->paramGet('keyword', false)))
             {
                 my $strKey = $oVariable->paramGet('key');
-                my $strValue = $oVariable->valueGet();
+                my $strValue = $self->variableReplace($oVariable->valueGet());
 
                 if ($oVariable->paramTest('eval', 'y'))
                 {

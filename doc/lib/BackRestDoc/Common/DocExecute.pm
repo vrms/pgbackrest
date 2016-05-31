@@ -99,15 +99,18 @@ sub executeKey
             {name => 'oCommand', trace => true},
         );
 
-    # Format and split command
+    # Add user to command
     my $strCommand = $self->{oManifest}->variableReplace(trim($oCommand->fieldGet('exe-cmd')));
+    my $strUser = $self->{oManifest}->variableReplace($oCommand->paramGet('user', false, 'postgres'));
+    $strCommand = ($strUser eq 'vagrant' ? '' : ('sudo ' . ($strUser eq 'root' ? '' : "-u $strUser "))) . $strCommand;
+
+    # Format and split command
     $strCommand =~ s/[ ]*\n[ ]*/ \\\n    /smg;
     my @stryCommand = split("\n", $strCommand);
 
     my $hCacheKey =
     {
         host => $strHostName,
-        user => $self->{oManifest}->variableReplace($oCommand->paramGet('user', false, 'postgres')),
         cmd => \@stryCommand,
         output => JSON::PP::false,
     };
@@ -170,16 +173,9 @@ sub execute
         );
 
     # Working variables
-    my $strCommand;
-    my $strOutput;
-
-    # Command variables
     my $hCacheKey = $self->executeKey($strHostName, $oCommand);
-
-    # Add user to run the command as
-    $strCommand =
-        ($$hCacheKey{user} eq 'vagrant' ? '' :
-            ('sudo ' . ($$hCacheKey{user} eq 'root' ? '' : "-u $$hCacheKey{user} "))) . join("\n", @{$$hCacheKey{cmd}});
+    my $strCommand = join("\n", @{$$hCacheKey{cmd}});
+    my $strOutput;
 
     if (!$oCommand->paramTest('show', 'n') && $self->{bExe} && $self->isRequired($oSection))
     {
@@ -203,7 +199,6 @@ sub execute
 
             if ($bCacheHit)
             {
-                $strCommand = $$hCacheValue{cmd};
                 $strOutput = defined($$hCacheValue{output}) ? join("\n", @{$$hCacheValue{output}}) : undef;
             }
             else
@@ -215,8 +210,6 @@ sub execute
                 {
                     confess &log(ERROR, "cannot execute on host ${strHostName} because the host does not exist");
                 }
-
-                $$hCacheValue{cmd} = $strCommand;
 
                 my $oExec = $oHost->execute($strCommand,
                                             {iExpectedExitStatus => $$hCacheKey{'err-expect'},
