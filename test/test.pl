@@ -197,6 +197,9 @@ if (!defined($strTestPath))
     $strTestPath = cwd() . '/test';
 }
 
+# Get the base backrest path
+my $strBackRestBase = dirname(dirname(abspath($0)));
+
 ####################################################################################################################################
 # Build Docker containers
 ####################################################################################################################################
@@ -619,7 +622,7 @@ eval
 
                         executeTest("docker run -itd -h $$oTest{os}-test --name=${strImage}" .
                                     " -v ${strHostTestPath}:${strVmTestPath}" .
-                                    " -v /backrest:/backrest backrest/$$oTest{os}-test-${strDbVersion}");
+                                    " -v ${strBackRestBase}:/backrest backrest/$$oTest{os}-test-${strDbVersion}");
                     }
 
                     # Build up command line for the individual test
@@ -631,7 +634,7 @@ eval
                     $strCommandLine =~ s/\-\-db\-version\=\S*//g;
 
                     my $strCommand =
-                        "docker exec -i -u vagrant ${strImage} $0 ${strCommandLine} --test-path=${strVmTestPath}" .
+                        "docker exec -i -u vagrant ${strImage} ${strBackRestBase}/test/test.pl ${strCommandLine} --test-path=${strVmTestPath}" .
                         " --vm=none --module=$$oTest{module} --test=$$oTest{test}" .
                         (defined($$oTest{run}) ? " --run=$$oTest{run}" : '') .
                         (defined($$oTest{thread}) ? " --thread-max=$$oTest{thread}" : '') .
