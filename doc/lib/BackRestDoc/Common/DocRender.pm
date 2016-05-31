@@ -461,7 +461,7 @@ sub processTag
         {
             if (!defined($strUrl))
             {
-                $strUrl = '{[backrest-url-base]}/' . $oTag->paramGet('page');
+                $strUrl = '{[backrest-url-base]}/' . $oTag->paramGet('page') . '.html';
             }
 
             $strBuffer = '[' . $oTag->valueGet() . '](' . $strUrl . ')';
@@ -470,7 +470,22 @@ sub processTag
         {
             if (!defined($strUrl))
             {
-                $strUrl = $oTag->paramGet('page', false);
+                my $strPage = $self->variableReplace($oTag->paramGet('page', false));
+
+                # If this is a page URL
+                if (defined($strPage))
+                {
+                    # If the page wasn't rendered then point at the website
+                    if (!defined($self->{oManifest}->renderOutGet('html', $strPage, true)))
+                    {
+                        $strUrl = '{[backrest-url-base]}/' . $oTag->paramGet('page') . '.html';
+                    }
+                    # Else point locally
+                    else
+                    {
+                        $strUrl = $oTag->paramGet('page', false) . '.html';
+                    }
+                }
 
                 if (!defined($strUrl))
                 {

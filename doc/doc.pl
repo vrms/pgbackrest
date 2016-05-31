@@ -61,6 +61,7 @@ doc.pl [options]
    --out            Output types (html, pdf, markdown)
    --keyword        Keyword used to filter output
    --require        Require only certain sections of the document (to speed testing)
+   --exclude        Exclude source from generation (links will reference website)
 =cut
 
 ####################################################################################################################################
@@ -78,6 +79,7 @@ my $strDocPath;
 my @stryOutput;
 my @stryKeyword;
 my @stryRequire;
+my @stryExclude;
 my $bDeploy = false;
 
 GetOptions ('help' => \$bHelp,
@@ -87,6 +89,7 @@ GetOptions ('help' => \$bHelp,
             'out=s@' => \@stryOutput,
             'keyword=s@' => \@stryKeyword,
             'require=s@' => \@stryRequire,
+            'exclude=s@' => \@stryExclude,
             'no-exe', \$bNoExe,
             'deploy', \$bDeploy,
             'no-cache', \$bNoCache,
@@ -137,6 +140,9 @@ eval
 
         !@stryOutput
             or confess "--out ${strError}";
+
+        !@stryExclude
+            or confess "--exclude ${strError}";
     }
 
     # Set console log level
@@ -172,7 +178,7 @@ eval
 
     # Load the manifest
     my $oManifest =
-        new BackRestDoc::Common::DocManifest(\@stryKeyword, \@stryRequire, $oVariableOverride, $strDocPath, $bDeploy, $bCacheOnly);
+        new BackRestDoc::Common::DocManifest(\@stryKeyword, \@stryRequire, \@stryExclude, $oVariableOverride, $strDocPath, $bDeploy, $bCacheOnly);
 
     if (!$bNoCache)
     {

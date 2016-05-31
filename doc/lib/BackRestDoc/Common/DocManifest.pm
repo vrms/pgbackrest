@@ -54,6 +54,7 @@ sub new
         my $strOperation,
         $self->{stryKeyword},
         $self->{stryRequire},
+        $self->{stryExclude},
         my $oVariableOverride,
         $self->{strDocPath},
         $self->{bDeploy},
@@ -64,6 +65,7 @@ sub new
             __PACKAGE__ . '->new', \@_,
             {name => 'stryKeyword'},
             {name => 'stryRequire'},
+            {name => 'stryExclude'},
             {name => 'oVariableOverride', required => false},
             {name => 'strDocPath', required => false},
             {name => 'bDeploy', required => false},
@@ -98,6 +100,12 @@ sub new
             {name => 'strKey', value => $strKey},
             {name => 'strSourceType', value => $strSourceType}
         );
+
+        # Skip sources in exclude list
+        if (grep(/^$strKey$/, @{$self->{stryExclude}}))
+        {
+            next;
+        }
 
         $$oSourceHash{doc} = new BackRestDoc::Common::Doc("$self->{strDocPath}/xml/${strKey}.xml");
 
@@ -142,6 +150,12 @@ sub new
             my $oRenderOutHash = {};
             my $strKey = $oRenderOut->paramGet('key');
             my $strSource = $oRenderOut->paramGet('source', false, $strKey);
+
+            # Skip sources in exclude list
+            if (grep(/^$strSource$/, @{$self->{stryExclude}}))
+            {
+                next;
+            }
 
             $$oRenderOutHash{source} = $strSource;
 
@@ -535,18 +549,20 @@ sub renderOutGet
     (
         $strOperation,
         $strType,
-        $strKey
+        $strKey,
+        $bIgnoreMissing,
     ) =
         logDebugParam
         (
             __PACKAGE__ . '->renderOutGet', \@_,
             {name => 'strType', trace => true},
-            {name => 'strKey', trace => true}
+            {name => 'strKey', trace => true},
+            {name => 'bIgnoreMissing', default => false, trace => true},
         );
 
     # use Data::Dumper; print Dumper(${$self->{oManifest}}{render});
 
-    if (!defined(${$self->{oManifest}}{render}{$strType}{out}{$strKey}))
+    if (!defined(${$self->{oManifest}}{render}{$strType}{out}{$strKey}) && !$bIgnoreMissing)
     {
         confess &log(ERROR, "render out ${strKey} does not exist");
     }
