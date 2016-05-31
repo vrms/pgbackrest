@@ -109,11 +109,28 @@ sub executeKey
         host => $strHostName,
         user => $self->{oManifest}->variableReplace($oCommand->paramGet('user', false, 'postgres')),
         cmd => \@stryCommand,
+        output => JSON::PP::false,
     };
 
     if (defined($oCommand->paramGet('err-expect', false)))
     {
         $$hCacheKey{'err-expect'} = $oCommand->paramGet('err-expect');
+    }
+
+    if ($oCommand->paramTest('output', 'y') || $oCommand->paramTest('show', 'y') || $oCommand->paramTest('variable-key', 'y'))
+    {
+        $$hCacheKey{'output'} = JSON::PP::true;
+    }
+
+    if (defined($oCommand->fieldGet('exe-highlight', false)))
+    {
+        $$hCacheKey{'output'} = JSON::PP::true;
+        $$hCacheKey{'filter'} = $oCommand->paramTest('filter', 'n') ? JSON::PP::false : JSON::PP::true;
+
+        my @stryHighlight;
+        $stryHighlight[0] = $oCommand->fieldGet('exe-highlight');
+
+        $$hCacheKey{'highlight'} = \@stryHighlight;
     }
 
     # Return from function and log return values if any
@@ -157,7 +174,6 @@ sub execute
 
     # Command variables
     my $hCacheKey = $self->executeKey($strHostName, $oCommand);
-    my $bExeOutput = $oCommand->paramTest('output', 'y');
     my $strVariableKey = $oCommand->paramGet('variable-key', false);
 
     # Add user to run the command as
@@ -188,7 +204,7 @@ sub execute
             if ($bCacheHit)
             {
                 $strCommand = $$hCacheValue{cmd};
-                $strOutput = defined($$hCacheValue{stdout}) ? join("\n", @{$$hCacheValue{stdout}}) : undef;
+                $strOutput = defined($$hCacheValue{output}) ? join("\n", @{$$hCacheValue{output}}) : undef;
             }
             else
             {
@@ -222,16 +238,111 @@ sub execute
                         $strOutput =~ s/^[0-9]{4}-[0-1][0-9]-[0-3][0-9] [0-2][0-9]:[0-6][0-9]:[0-6][0-9]\.[0-9]{3} T[0-9]{2} //smg;
                     }
 
-                    my @stryOutput = split("\n", $strOutput);
-                    $$hCacheValue{stdout} = \@stryOutput;
+                    # my @stryOutput = split("\n", $strOutput);
+                    # $$hCacheValue{stdout} = \@stryOutput;
                 }
 
                 if (defined($$hCacheKey{'err-expect'}) && defined($oExec->{strErrorLog}) && $oExec->{strErrorLog} ne '')
                 {
-                    my $strError = $oExec->{strErrorLog};
-                    $strError =~ s/^\n+|\n$//g;
-                    my @stryError = split("\n", $strError);
-                    $$hCacheValue{stderr} = \@stryError;
+                    # my $strError = $oExec->{strErrorLog};
+                    # $strError =~ s/^\n+|\n$//g;
+                    # my @stryError = split("\n", $strError);
+                    # $$hCacheValue{stderr} = \@stryError;
+
+                    $strOutput .= $oExec->{strErrorLog};
+                }
+
+                # if (defined($$hCacheValue{stderr}))
+                # {
+                #     $strOutput .= join("\n", @{$$hCacheValue{stderr}});
+                # }
+
+                if ($$hCacheKey{output} && $$hCacheKey{filter} && defined($strOutput))
+                {
+                    my $strHighLight = @{$$hCacheKey{highlight}}[0];
+
+                    if (!defined($strHighLight))
+                    {
+                        confess &log(ERROR, 'filter requires highlight definition: ' . $strCommand);
+                    }
+
+                    my $iFilterContext = $oCommand->paramGet('filter-context', false, 2);
+
+                    my @stryOutput = split("\n", $strOutput);
+                    undef($strOutput);
+                    # my $iFiltered = 0;
+                    my $iLastOutput = -1;
+
+                    for (my $iIndex = 0; $iIndex < @stryOutput; $iIndex++)
+                    {
+                        if ($stryOutput[$iIndex] =~ /$strHighLight/)
+                        {
+                            # Determine the first line to output
+                            my $iFilterFirst = $iIndex - $iFilterContext;
+
+                            # Don't go past the beginning
+                            $iFilterFirst = $iFilterFirst < 0 ? 0 : $iFilterFirst;
+
+                            # Don't repeat lines that have already been output
+                            $iFilterFirst  = $iFilterFirst <= $iLastOutput ? $iLastOutput + 1 : $iFilterFirst;
+
+                            # Determine the last line to output
+                            my $iFilterLast = $iIndex + $iFilterContext;
+
+                            # Don't got past the end
+                            $iFilterLast = $iFilterLast >= @stryOutput ? @stryOutput -1 : $iFilterLast;
+
+                            # Mark filtered lines if any
+                            if ($iFilterFirst > $iLastOutput + 1)
+                            {
+                                my $iFiltered = $iFilterFirst - ($iLastOutput + 1);
+
+                                if ($iFiltered > 1)
+                                {
+                                    $strOutput .= (defined($strOutput) ? "\n" : '') .
+                                                  "       [filtered ${iFiltered} lines of output]";
+                                }
+                                else
+                                {
+                                    $iFilterFirst -= 1;
+                                }
+                            }
+
+                            # Output the lines
+                            for (my $iOutputIndex = $iFilterFirst; $iOutputIndex <= $iFilterLast; $iOutputIndex++)
+                            {
+                                    $strOutput .= (defined($strOutput) ? "\n" : '') . $stryOutput[$iOutputIndex];
+                            }
+
+                            $iLastOutput = $iFilterLast;
+                        }
+                    }
+
+                    if (@stryOutput - 1 > $iLastOutput + 1)
+                    {
+                        my $iFiltered = (@stryOutput - 1) - ($iLastOutput + 1);
+
+                        if ($iFiltered > 1)
+                        {
+                            $strOutput .= (defined($strOutput) ? "\n" : '') .
+                                          "       [filtered ${iFiltered} lines of output]";
+                        }
+                        else
+                        {
+                            $strOutput .= (defined($strOutput) ? "\n" : '') . $stryOutput[@stryOutput - 1];
+                        }
+                    }
+                }
+
+                if (!$$hCacheKey{output})
+                {
+                    $strOutput = undef;
+                }
+
+                if (defined($strOutput))
+                {
+                    my @stryOutput = split("\n", $strOutput);
+                    $$hCacheValue{output} = \@stryOutput;
                 }
 
                 if ($bCache)
@@ -240,99 +351,13 @@ sub execute
                 }
             }
 
-            if (defined($$hCacheValue{stderr}))
-            {
-                $strOutput .= join("\n", @{$$hCacheValue{stderr}});
-            }
-
             # Output is assigned to a var
             if (defined($strVariableKey))
             {
                 $self->{oManifest}->variableSet($strVariableKey, trim($strOutput), true);
             }
-            elsif (!$oCommand->paramTest('filter', 'n') && $bExeOutput && defined($strOutput))
-            {
-                my $strHighLight = $self->{oManifest}->variableReplace($oCommand->fieldGet('exe-highlight', false));
-
-                if (!defined($strHighLight))
-                {
-                    confess &log(ERROR, 'filter requires highlight definition: ' . $strCommand);
-                }
-
-                my $iFilterContext = $oCommand->paramGet('filter-context', false, 2);
-
-                my @stryOutput = split("\n", $strOutput);
-                undef($strOutput);
-                # my $iFiltered = 0;
-                my $iLastOutput = -1;
-
-                for (my $iIndex = 0; $iIndex < @stryOutput; $iIndex++)
-                {
-                    if ($stryOutput[$iIndex] =~ /$strHighLight/)
-                    {
-                        # Determine the first line to output
-                        my $iFilterFirst = $iIndex - $iFilterContext;
-
-                        # Don't go past the beginning
-                        $iFilterFirst = $iFilterFirst < 0 ? 0 : $iFilterFirst;
-
-                        # Don't repeat lines that have already been output
-                        $iFilterFirst  = $iFilterFirst <= $iLastOutput ? $iLastOutput + 1 : $iFilterFirst;
-
-                        # Determine the last line to output
-                        my $iFilterLast = $iIndex + $iFilterContext;
-
-                        # Don't got past the end
-                        $iFilterLast = $iFilterLast >= @stryOutput ? @stryOutput -1 : $iFilterLast;
-
-                        # Mark filtered lines if any
-                        if ($iFilterFirst > $iLastOutput + 1)
-                        {
-                            my $iFiltered = $iFilterFirst - ($iLastOutput + 1);
-
-                            if ($iFiltered > 1)
-                            {
-                                $strOutput .= (defined($strOutput) ? "\n" : '') .
-                                              "       [filtered ${iFiltered} lines of output]";
-                            }
-                            else
-                            {
-                                $iFilterFirst -= 1;
-                            }
-                        }
-
-                        # Output the lines
-                        for (my $iOutputIndex = $iFilterFirst; $iOutputIndex <= $iFilterLast; $iOutputIndex++)
-                        {
-                                $strOutput .= (defined($strOutput) ? "\n" : '') . $stryOutput[$iOutputIndex];
-                        }
-
-                        $iLastOutput = $iFilterLast;
-                    }
-                }
-
-                if (@stryOutput - 1 > $iLastOutput + 1)
-                {
-                    my $iFiltered = (@stryOutput - 1) - ($iLastOutput + 1);
-
-                    if ($iFiltered > 1)
-                    {
-                        $strOutput .= (defined($strOutput) ? "\n" : '') .
-                                      "       [filtered ${iFiltered} lines of output]";
-                    }
-                    else
-                    {
-                        $strOutput .= (defined($strOutput) ? "\n" : '') . $stryOutput[@stryOutput - 1];
-                    }
-                }
-            }
-
-            if (!$bExeOutput)
-            {
-                $strOutput = undef;
-            }
         }
-        elsif ($bExeOutput)
+        elsif ($$hCacheKey{output})
         {
             $strOutput = 'Output suppressed for testing';
         }
@@ -380,7 +405,7 @@ sub configKey
 
     if ($oConfig->paramTest('reset', 'y'))
     {
-        $$hCacheKey{reset} = true;
+        $$hCacheKey{reset} = JSON::PP::true;
     }
 
     # Add all options to the key
@@ -392,7 +417,7 @@ sub configKey
 
         if ($oOption->paramTest('remove', 'y'))
         {
-            $$hOption{remove} = true;
+            $$hOption{remove} = JSON::PP::true;
         }
 
         if (defined($oOption->valueGet(false)))
