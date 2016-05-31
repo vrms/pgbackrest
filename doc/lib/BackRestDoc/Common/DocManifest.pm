@@ -57,6 +57,7 @@ sub new
         my $oVariableOverride,
         $self->{strDocPath},
         $self->{bDeploy},
+        $self->{bCacheOnly},
     ) =
         logDebugParam
         (
@@ -66,6 +67,7 @@ sub new
             {name => 'oVariableOverride', required => false},
             {name => 'strDocPath', required => false},
             {name => 'bDeploy', required => false},
+            {name => 'bCacheOnly', required => false},
         );
 
     # Set the base path if it was not passed in
@@ -73,6 +75,10 @@ sub new
     {
         $self->{strDocPath} = abs_path(dirname($0));
     }
+
+    # Set cache file names
+    $self->{strExeCacheLocal} = $self->{strDocPath} . "/output/exe.cache";
+    $self->{strExeCacheDeploy} = $self->{strDocPath} . "/resource/exe.cache";
 
     # Load the manifest
     $self->{oManifestXml} = new BackRestDoc::Common::Doc("$self->{strDocPath}/manifest.xml");
@@ -554,6 +560,29 @@ sub renderOutGet
 }
 
 ####################################################################################################################################
+# cacheKey
+####################################################################################################################################
+sub cacheKey
+{
+    my $self = shift;
+
+    # Assign function parameters, defaults, and log debug info
+    my ($strOperation) = logDebugParam(__PACKAGE__ . '->cacheKey');
+
+    my $strKeyword = join("\n", @{$self->{stryKeyword}});
+    my $strRequire = defined($self->{stryRequire}) && @{$self->{stryRequire}} > 0 ?
+        join("\n", @{$self->{stryRequire}}) : 'all';
+
+    # Return from function and log return values if any
+    return logDebugReturn
+    (
+        $strOperation,
+        {name => 'strKeyword', value => $strKeyword},
+        {name => 'strRequire', value => $strRequire},
+    );
+}
+
+####################################################################################################################################
 # cacheRead
 ####################################################################################################################################
 sub cacheRead
@@ -561,24 +590,15 @@ sub cacheRead
     my $self = shift;
 
     # Assign function parameters, defaults, and log debug info
-    my
-    (
-        $strOperation,
-        $bDeploy,
-    ) =
-        logDebugParam
-        (
-            __PACKAGE__ . '->cacheRead', \@_,
-            {name => 'bDeploy', trace => true},
-        );
+    my ($strOperation) = logDebugParam(__PACKAGE__ . '->cacheRead');
 
     $self->{hCache} = undef;
 
-    my $strCacheFile = $self->{strDocPath} . "/resource/exe.cache";
+    my $strCacheFile = $self->{bDeploy} ? $self->{strExeCacheDeploy} : $self->{strExeCacheLocal};
 
-    if (!fileExists($strCacheFile) && !$bDeploy)
+    if (!fileExists($strCacheFile) && !$self->{bDeploy})
     {
-        $strCacheFile = $self->{strDocPath} . "/output/exe.cache";
+        $strCacheFile = $self->{strExeCacheDeploy};
     }
 
     if (fileExists($strCacheFile))
@@ -594,9 +614,43 @@ sub cacheRead
             if (defined(${$self->{hCache}}{$strKeyword}{$strRequire}{$strSource}))
             {
                 $$hSource{hyCache} = ${$self->{hCache}}{$strKeyword}{$strRequire}{$strSource};
-                &log(WARN, "cache load $strSource");
+                &log(DETAIL, "cache load $strSource (keyword = ${strKeyword}, require = ${strRequire})");
             }
         }
+    }
+
+    # Return from function and log return values if any
+    return logDebugReturn($strOperation);
+}
+
+####################################################################################################################################
+# cacheWrite
+####################################################################################################################################
+sub cacheWrite
+{
+    my $self = shift;
+
+    # Assign function parameters, defaults, and log debug info
+    my ($strOperation) = logDebugParam(__PACKAGE__ . '->cacheWrite');
+
+    my $strCacheFile = $self->{bDeploy} ? $self->{strExeCacheDeploy} : $self->{strExeCacheLocal};
+    my ($strKeyword, $strRequire) = $self->cacheKey();
+
+    foreach my $strSource (sort(keys(%{${$self->{oManifest}}{source}})))
+    {
+        my $hSource = ${$self->{oManifest}}{source}{$strSource};
+
+        if (defined($$hSource{hyCache}))
+        {
+            ${$self->{hCache}}{$strKeyword}{$strRequire}{$strSource} = $$hSource{hyCache};
+            &log(DETAIL, "cache load $strSource (keyword = ${strKeyword}, require = ${strRequire})");
+        }
+    }
+
+    if (defined($self->{hCache}))
+    {
+        my $oJSON = JSON::PP->new()->canonical()->allow_nonref()->pretty();
+        fileStringWrite($strCacheFile, $oJSON->encode($self->{hCache}), false);
     }
 
     # Return from function and log return values if any
@@ -622,77 +676,16 @@ sub cacheReset
             {name => 'strSource', trace => true}
         );
 
-    &log(WARN, "Cache will be reset for source ${strSource} and the render retried automatically");
+    if ($self->{bCacheOnly})
+    {
+        confess &log(ERROR, 'Cache reset disabled by --cache-only option');
+    }
+
+    &log(WARN, "Cache will be reset for source ${strSource} and rendering retried automatically");
     delete(${$self->{oManifest}}{source}{$strSource}{hyCache});
 
     # Return from function and log return values if any
     return logDebugReturn($strOperation);
-}
-
-####################################################################################################################################
-# cacheWrite
-####################################################################################################################################
-sub cacheWrite
-{
-    my $self = shift;
-
-    # Assign function parameters, defaults, and log debug info
-    my
-    (
-        $strOperation,
-        $bDeploy,
-    ) =
-        logDebugParam
-        (
-            __PACKAGE__ . '->cacheWrite', \@_,
-            {name => 'bDeploy', trace => true},
-        );
-
-    my $strCacheFile = $bDeploy ? $self->{strDocPath} . "/resource/exe.cache" : $self->{strDocPath} . "/output/exe.cache";
-    my ($strKeyword, $strRequire) = $self->cacheKey();
-
-    foreach my $strSource (sort(keys(%{${$self->{oManifest}}{source}})))
-    {
-        my $hSource = ${$self->{oManifest}}{source}{$strSource};
-
-        if (defined($$hSource{hyCache}))
-        {
-            ${$self->{hCache}}{$strKeyword}{$strRequire}{$strSource} = $$hSource{hyCache};
-            &log(WARN, "cache save $strSource");
-        }
-    }
-
-    if (defined($self->{hCache}))
-    {
-        my $oJSON = JSON::PP->new()->canonical()->allow_nonref()->pretty();
-        fileStringWrite($strCacheFile, $oJSON->encode($self->{hCache}), false);
-    }
-
-    # Return from function and log return values if any
-    return logDebugReturn($strOperation);
-}
-
-####################################################################################################################################
-# cacheKey
-####################################################################################################################################
-sub cacheKey
-{
-    my $self = shift;
-
-    # Assign function parameters, defaults, and log debug info
-    my ($strOperation) = logDebugParam(__PACKAGE__ . '->cacheKey');
-
-    my $strKeyword = join("\n", @{$self->{stryKeyword}});
-    my $strRequire = defined($self->{stryRequire}) && @{$self->{stryRequire}} > 0 ?
-        join("\n", @{$self->{stryRequire}}) : 'all';
-
-    # Return from function and log return values if any
-    return logDebugReturn
-    (
-        $strOperation,
-        {name => 'strKeyword', value => $strKeyword},
-        {name => 'strRequire', value => $strRequire},
-    );
 }
 
 1;

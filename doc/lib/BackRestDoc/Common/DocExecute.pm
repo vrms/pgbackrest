@@ -818,6 +818,13 @@ sub cachePop
         $oCacheValue = $$hCache{value};
         $self->{iCacheIdx}++;
     }
+    else
+    {
+        if ($self->{oManifest}{bCacheOnly})
+        {
+            confess &log(ERROR, 'Cache only operation forced by --cache-only option');
+        }
+    }
 
     # Return from function and log return values if any
     return logDebugReturn

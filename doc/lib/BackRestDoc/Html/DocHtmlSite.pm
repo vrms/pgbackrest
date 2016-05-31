@@ -145,6 +145,10 @@ sub process
                     $self->{oManifest}->variableReplace(
                         (new BackRestDoc::Html::DocHtmlPage($self->{oManifest}, $strPageId, $self->{bExe}))->process());
             }
+            else
+            {
+                confess $@;
+            }
         }
 
         # Save the html page

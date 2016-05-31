@@ -16,6 +16,7 @@ use Cwd qw(abs_path);
 use File::Basename qw(dirname);
 use Getopt::Long qw(GetOptions);
 use Pod::Usage qw(pod2usage);
+use Scalar::Util qw(blessed);
 use Storable;
 
 use lib dirname($0) . '/lib';
@@ -54,6 +55,7 @@ doc.pl [options]
    --deploy         Write exe.cache into resource for persistence
    --no-exe         Should commands be executed when building help? (for testing only)
    --no-cache       Don't use execution cache
+   --cache-only     Only use the execution cache - don't attempt to generate it
    --var            Override variables defined in the XML
    --doc-path       Document path to render (manifest.xml should be located here)
    --out            Output types (html, pdf, markdown)
@@ -70,6 +72,7 @@ my $bQuiet = false;
 my $strLogLevel = 'info';
 my $bNoExe = false;
 my $bNoCache = false;
+my $bCacheOnly = false;
 my $oVariableOverride = {};
 my $strDocPath;
 my @stryOutput;
@@ -87,160 +90,203 @@ GetOptions ('help' => \$bHelp,
             'no-exe', \$bNoExe,
             'deploy', \$bDeploy,
             'no-cache', \$bNoCache,
+            'cache-only', \$bCacheOnly,
             'var=s%', $oVariableOverride,
             'doc-path=s', \$strDocPath)
     or pod2usage(2);
 
-# Display version and exit if requested
-if ($bHelp || $bVersion)
+####################################################################################################################################
+# Run in eval block to catch errors
+####################################################################################################################################
+eval
 {
-    print BACKREST_NAME . ' ' . $VERSION . " Documentation Builder\n";
 
-    if ($bHelp)
+    # Display version and exit if requested
+    if ($bHelp || $bVersion)
     {
-        print "\n";
-        pod2usage();
-    }
+        print BACKREST_NAME . ' ' . $VERSION . " Documentation Builder\n";
 
-    exit 0;
-}
-
-# Disable cache when no exe
-if ($bNoExe)
-{
-    $bNoCache = true;
-}
-
-# Set console log level
-if ($bQuiet)
-{
-    $strLogLevel = 'error';
-}
-
-# If no keyword was passed then use default
-if (@stryKeyword == 0)
-{
-    @stryKeyword = ('default');
-}
-
-logLevelSet(undef, uc($strLogLevel));
-
-# Get the base path
-my $strBasePath = abs_path(dirname($0));
-
-if (!defined($strDocPath))
-{
-    $strDocPath = $strBasePath;
-}
-
-my $strOutputPath = "${strDocPath}/output";
-
-# Create the out path if it does not exist
-if (!-e $strOutputPath)
-{
-    mkdir($strOutputPath)
-        or confess &log(ERROR, "unable to create path ${strOutputPath}");
-}
-
-# Load the manifest
-my $oManifest;
-my $strManifestCache = "${strBasePath}/resource/manifest.cache";
-
-$oManifest = new BackRestDoc::Common::DocManifest(\@stryKeyword, \@stryRequire, $oVariableOverride, $strDocPath);
-
-if (!$bNoCache)
-{
-    $oManifest->cacheRead($bDeploy);
-}
-
-# If no outputs were given
-if (@stryOutput == 0)
-{
-    @stryOutput = $oManifest->renderList();
-
-    if ($oManifest->isBackRest())
-    {
-        push(@stryOutput, 'help');
-        push(@stryOutput, 'man');
-    }
-}
-
-for my $strOutput (@stryOutput)
-{
-    if (!(($strOutput eq 'help' || $strOutput eq 'man') && $oManifest->isBackRest()))
-    {
-        $oManifest->renderGet($strOutput);
-    }
-
-    &log(INFO, "render ${strOutput} output");
-
-    if ($strOutput eq 'markdown')
-    {
-        my $oMarkdown =
-            new BackRestDoc::Markdown::DocMarkdown
-            (
-                $oManifest,
-                "${strBasePath}/xml",
-                "${strOutputPath}/markdown",
-                !$bNoExe
-            );
-
-        $oMarkdown->process();
-    }
-    elsif (($strOutput eq 'help' || $strOutput eq 'man') && $oManifest->isBackRest())
-    {
-        # Generate the command-line help
-        my $oRender = new BackRestDoc::Common::DocRender('text', $oManifest);
-        my $oDocConfig =
-            new BackRestDoc::Common::DocConfig(
-                new BackRestDoc::Common::Doc("${strBasePath}/xml/reference.xml"), $oRender);
-
-        if ($strOutput eq 'help')
+        if ($bHelp)
         {
-            $oDocConfig->helpDataWrite($oManifest);
+            print "\n";
+            pod2usage();
         }
-        else
+
+        exit 0;
+    }
+
+    # Disable cache when no exe
+    if ($bNoExe)
+    {
+        $bNoCache = true;
+    }
+
+    # Make sure options are set correctly for deploy
+    if ($bDeploy)
+    {
+        my $strError = 'cannot be specified for deploy';
+
+        !$bNoExe
+            or confess "--no-exe ${strError}";
+
+        !$bNoCache
+            or confess "--no-cache ${strError}";
+
+        !@stryRequire
+            or confess "--require ${strError}";
+
+        !@stryOutput
+            or confess "--out ${strError}";
+    }
+
+    # Set console log level
+    if ($bQuiet)
+    {
+        $strLogLevel = 'error';
+    }
+
+    # If no keyword was passed then use default
+    if (@stryKeyword == 0)
+    {
+        @stryKeyword = ('default');
+    }
+
+    logLevelSet(undef, uc($strLogLevel));
+
+    # Get the base path
+    my $strBasePath = abs_path(dirname($0));
+
+    if (!defined($strDocPath))
+    {
+        $strDocPath = $strBasePath;
+    }
+
+    my $strOutputPath = "${strDocPath}/output";
+
+    # Create the out path if it does not exist
+    if (!-e $strOutputPath)
+    {
+        mkdir($strOutputPath)
+            or confess &log(ERROR, "unable to create path ${strOutputPath}");
+    }
+
+    # Load the manifest
+    my $oManifest;
+    my $strManifestCache = "${strBasePath}/resource/manifest.cache";
+
+    $oManifest =
+        new BackRestDoc::Common::DocManifest(\@stryKeyword, \@stryRequire, $oVariableOverride, $strDocPath, $bDeploy, $bCacheOnly);
+
+    if (!$bNoCache)
+    {
+        $oManifest->cacheRead();
+    }
+
+    # If no outputs were given
+    if (@stryOutput == 0)
+    {
+        @stryOutput = $oManifest->renderList();
+
+        if ($oManifest->isBackRest())
         {
-            filePathCreate("${strBasePath}/output/man", '0770', true, true);
-            fileStringWrite("${strBasePath}/output/man/" . lc(BACKREST_NAME) . '.1.txt', $oDocConfig->manGet($oManifest), false);
+            push(@stryOutput, 'help');
+            push(@stryOutput, 'man');
         }
     }
-    elsif ($strOutput eq 'html')
+
+    for my $strOutput (@stryOutput)
     {
-        my $oHtmlSite =
-            new BackRestDoc::Html::DocHtmlSite
-            (
-                $oManifest,
-                "${strBasePath}/xml",
-                "${strOutputPath}/html",
-                "${strBasePath}/resource/html/default.css",
-                defined($oManifest->variableGet('project-favicon')) ?
-                    "${strBasePath}/resource/html/" . $oManifest->variableGet('project-favicon') : undef,
-                defined($oManifest->variableGet('project-logo')) ?
-                    "${strBasePath}/resource/" . $oManifest->variableGet('project-logo') : undef,
-                !$bNoExe
-            );
+        if (!(($strOutput eq 'help' || $strOutput eq 'man') && $oManifest->isBackRest()))
+        {
+            $oManifest->renderGet($strOutput);
+        }
 
-        $oHtmlSite->process();
+        &log(INFO, "render ${strOutput} output");
+
+        if ($strOutput eq 'markdown')
+        {
+            my $oMarkdown =
+                new BackRestDoc::Markdown::DocMarkdown
+                (
+                    $oManifest,
+                    "${strBasePath}/xml",
+                    "${strOutputPath}/markdown",
+                    !$bNoExe
+                );
+
+            $oMarkdown->process();
+        }
+        elsif (($strOutput eq 'help' || $strOutput eq 'man') && $oManifest->isBackRest())
+        {
+            # Generate the command-line help
+            my $oRender = new BackRestDoc::Common::DocRender('text', $oManifest);
+            my $oDocConfig =
+                new BackRestDoc::Common::DocConfig(
+                    new BackRestDoc::Common::Doc("${strBasePath}/xml/reference.xml"), $oRender);
+
+            if ($strOutput eq 'help')
+            {
+                $oDocConfig->helpDataWrite($oManifest);
+            }
+            else
+            {
+                filePathCreate("${strBasePath}/output/man", '0770', true, true);
+                fileStringWrite("${strBasePath}/output/man/" . lc(BACKREST_NAME) . '.1.txt', $oDocConfig->manGet($oManifest), false);
+            }
+        }
+        elsif ($strOutput eq 'html')
+        {
+            my $oHtmlSite =
+                new BackRestDoc::Html::DocHtmlSite
+                (
+                    $oManifest,
+                    "${strBasePath}/xml",
+                    "${strOutputPath}/html",
+                    "${strBasePath}/resource/html/default.css",
+                    defined($oManifest->variableGet('project-favicon')) ?
+                        "${strBasePath}/resource/html/" . $oManifest->variableGet('project-favicon') : undef,
+                    defined($oManifest->variableGet('project-logo')) ?
+                        "${strBasePath}/resource/" . $oManifest->variableGet('project-logo') : undef,
+                    !$bNoExe
+                );
+
+            $oHtmlSite->process();
+        }
+        elsif ($strOutput eq 'pdf')
+        {
+            my $oLatex =
+                new BackRestDoc::Latex::DocLatex
+                (
+                    $oManifest,
+                    "${strBasePath}/xml",
+                    "${strOutputPath}/latex",
+                    "${strBasePath}/resource/latex/preamble.tex",
+                    !$bNoExe
+                );
+
+            $oLatex->process();
+        }
     }
-    elsif ($strOutput eq 'pdf')
+
+    # Cache the manifest (mostly useful for testing rendering changes in the code)
+    if (!$bNoCache)
     {
-        my $oLatex =
-            new BackRestDoc::Latex::DocLatex
-            (
-                $oManifest,
-                "${strBasePath}/xml",
-                "${strOutputPath}/latex",
-                "${strBasePath}/resource/latex/preamble.tex",
-                !$bNoExe
-            );
-
-        $oLatex->process();
+        $oManifest->cacheWrite();
     }
-}
+};
 
-# Cache the manifest (mostly useful for testing rendering changes in the code)
-if (!$bNoCache)
+####################################################################################################################################
+# Check for errors
+####################################################################################################################################
+if ($@)
 {
-    $oManifest->cacheWrite($bDeploy);
+    my $oMessage = $@;
+
+    # If a backrest exception then return the code - don't confess
+    if (blessed($oMessage) && $oMessage->isa('pgBackRest::Common::Exception'))
+    {
+        exit $oMessage->code();
+    }
+
+    confess $oMessage;
 }
