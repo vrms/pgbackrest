@@ -531,6 +531,7 @@ sub manGet
     }
 
     # Build command and config hashes
+    my $hOptionRule = optionRuleGet();
     my $hConfig = $self->{oConfigHash};
     my $hCommandList = {};
     my $iCommandMaxLen = 0;
@@ -543,6 +544,21 @@ sub manGet
         $iCommandMaxLen = length($strCommand) > $iCommandMaxLen ? length($strCommand) : $iCommandMaxLen;
 
         $$hCommandList{$strCommand}{summary} = $$hCommand{&CONFIG_HELP_SUMMARY};
+
+        if (defined($$hCommand{&CONFIG_HELP_OPTION}))
+        {
+            foreach my $strOption (sort(keys(%{$$hCommand{&CONFIG_HELP_OPTION}})))
+            {
+                my $hOption = $$hCommand{&CONFIG_HELP_OPTION}{$strOption};
+
+                if ($$hOption{&CONFIG_HELP_SOURCE} eq CONFIG_HELP_SOURCE_COMMAND)
+                {
+                    $iOptionMaxLen = length($strOption) > $iOptionMaxLen ? length($strOption) : $iOptionMaxLen;
+
+                    $$hOptionList{$strCommand}{$strOption}{&CONFIG_HELP_SUMMARY} = $$hOption{&CONFIG_HELP_SUMMARY};
+                }
+            }
+        }
     }
 
     foreach my $strOption (sort(keys(%{$$hConfig{&CONFIG_HELP_OPTION}})))
@@ -551,7 +567,7 @@ sub manGet
         $iOptionMaxLen = length($strOption) > $iOptionMaxLen ? length($strOption) : $iOptionMaxLen;
         my $strSection = defined($$hOption{&CONFIG_HELP_SECTION}) ? $$hOption{&CONFIG_HELP_SECTION} : CONFIG_SECTION_GENERAL;
 
-        $$hOptionList{$strSection}{$strOption}{summary} = $$hOption{&CONFIG_HELP_SUMMARY};
+        $$hOptionList{$strSection}{$strOption}{&CONFIG_HELP_SUMMARY} = $$hOption{&CONFIG_HELP_SUMMARY};
     }
 
     # Output Commands
@@ -560,9 +576,14 @@ sub manGet
 
     foreach my $strCommand (sort(keys(%{$hCommandList})))
     {
-        $strManPage .= "\n  " . "${strCommand}" . (' ' x ($iCommandMaxLen - length($strCommand))) . '  ' .
-            manGetFormatText($oManifest->variableReplace($self->{oDocRender}->processText($$hCommandList{$strCommand}{summary})),
-                80, $iCommandMaxLen + 4);
+        # Construct the summary
+        my $strSummary = $oManifest->variableReplace($self->{oDocRender}->processText($$hCommandList{$strCommand}{summary}));
+        # $strSummary = lcfirst(substr($strSummary, 0, length($strSummary) - 1));
+
+        # Output the summary
+        $strManPage .=
+            "\n  " . "${strCommand}" . (' ' x ($iCommandMaxLen - length($strCommand))) . '  ' .
+            manGetFormatText($strSummary, 80, $iCommandMaxLen + 4);
     }
 
     # Output options
@@ -576,10 +597,31 @@ sub manGet
 
         foreach my $strOption (sort(keys(%{$$hOptionList{$strSection}})))
         {
-            $strManPage .= "\n    " . "--${strOption}" . (' ' x ($iOptionMaxLen - length($strOption))) . '  ' .
-                manGetFormatText(
-                    $oManifest->variableReplace($self->{oDocRender}->processText($$hOptionList{$strSection}{$strOption}{summary})),
-                        80, $iOptionMaxLen + 8);
+            my $hOption = $$hOptionList{$strSection}{$strOption};
+
+            # Contruct the default
+            my $strCommand = defined(${commandHashGet()}{$strSection}) ? $strSection : undef;
+            my $strDefault = optionDefault($strOption, $strCommand);
+
+            if (defined($strDefault))
+            {
+                if ($$hOptionRule{$strOption}{&OPTION_RULE_TYPE} eq &OPTION_TYPE_BOOLEAN)
+                {
+                    $strDefault = $strDefault ? 'y' : 'n';
+                }
+            }
+            #
+            # use Data::Dumper; confess Dumper($$hOption{&CONFIG_HELP_SUMMARY});
+
+            # Construct the summary
+            my $strSummary = $oManifest->variableReplace($self->{oDocRender}->processText($$hOption{&CONFIG_HELP_SUMMARY}));
+
+            $strSummary = $strSummary . (defined($strDefault) ? " [default=${strDefault}]" : '');
+
+            # Output the summary
+            $strManPage .=
+                "\n    " . "--${strOption}" . (' ' x ($iOptionMaxLen - length($strOption))) . '  ' .
+                manGetFormatText($strSummary, 80, $iOptionMaxLen + 8);
         }
 
         $bFirst = false;
