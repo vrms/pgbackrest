@@ -171,10 +171,7 @@ eval
     }
 
     # Load the manifest
-    my $oManifest;
-    my $strManifestCache = "${strBasePath}/resource/manifest.cache";
-
-    $oManifest =
+    my $oManifest =
         new BackRestDoc::Common::DocManifest(\@stryKeyword, \@stryRequire, $oVariableOverride, $strDocPath, $bDeploy, $bCacheOnly);
 
     if (!$bNoCache)

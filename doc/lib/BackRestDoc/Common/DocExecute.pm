@@ -117,7 +117,7 @@ sub executeKey
         $$hCacheKey{'err-expect'} = $oCommand->paramGet('err-expect');
     }
 
-    if ($oCommand->paramTest('output', 'y') || $oCommand->paramTest('show', 'y') || $oCommand->paramTest('variable-key', 'y'))
+    if ($oCommand->paramTest('output', 'y') || $oCommand->paramTest('show', 'y') || $oCommand->paramTest('variable-key'))
     {
         $$hCacheKey{'output'} = JSON::PP::true;
     }
@@ -125,12 +125,13 @@ sub executeKey
     if (defined($oCommand->fieldGet('exe-highlight', false)))
     {
         $$hCacheKey{'output'} = JSON::PP::true;
-        $$hCacheKey{'filter'} = $oCommand->paramTest('filter', 'n') ? JSON::PP::false : JSON::PP::true;
+        $$hCacheKey{highlight}{'filter'} = $oCommand->paramTest('filter', 'n') ? JSON::PP::false : JSON::PP::true;
+        $$hCacheKey{highlight}{'filter-context'} = $oCommand->paramGet('filter-context', false, 2);
 
         my @stryHighlight;
-        $stryHighlight[0] = $oCommand->fieldGet('exe-highlight');
+        $stryHighlight[0] = $self->{oManifest}->variableReplace($oCommand->fieldGet('exe-highlight'));
 
-        $$hCacheKey{'highlight'} = \@stryHighlight;
+        $$hCacheKey{highlight}{list} = \@stryHighlight;
     }
 
     # Return from function and log return values if any
@@ -174,7 +175,6 @@ sub execute
 
     # Command variables
     my $hCacheKey = $self->executeKey($strHostName, $oCommand);
-    my $strVariableKey = $oCommand->paramGet('variable-key', false);
 
     # Add user to run the command as
     $strCommand =
@@ -257,16 +257,16 @@ sub execute
                 #     $strOutput .= join("\n", @{$$hCacheValue{stderr}});
                 # }
 
-                if ($$hCacheKey{output} && $$hCacheKey{filter} && defined($strOutput))
+                if ($$hCacheKey{output} && defined($$hCacheKey{highlight}) && $$hCacheKey{highlight}{filter} && defined($strOutput))
                 {
-                    my $strHighLight = @{$$hCacheKey{highlight}}[0];
+                    my $strHighLight = @{$$hCacheKey{highlight}{list}}[0];
 
                     if (!defined($strHighLight))
                     {
                         confess &log(ERROR, 'filter requires highlight definition: ' . $strCommand);
                     }
 
-                    my $iFilterContext = $oCommand->paramGet('filter-context', false, 2);
+                    my $iFilterContext = $$hCacheKey{highlight}{'filter-context'};
 
                     my @stryOutput = split("\n", $strOutput);
                     undef($strOutput);
@@ -352,9 +352,9 @@ sub execute
             }
 
             # Output is assigned to a var
-            if (defined($strVariableKey))
+            if ($oCommand->paramTest('variable-key'))
             {
-                $self->{oManifest}->variableSet($strVariableKey, trim($strOutput), true);
+                $self->{oManifest}->variableSet($oCommand->paramGet('variable-key'), trim($strOutput), true);
             }
         }
         elsif ($$hCacheKey{output})
@@ -363,9 +363,10 @@ sub execute
         }
     }
 
-    if (defined($strVariableKey) && !defined($self->{oManifest}->variableGet($strVariableKey)))
+    # Default variable output when it was not set by execution
+    if ($oCommand->paramTest('variable-key') && !defined($self->{oManifest}->variableGet($oCommand->paramGet('variable-key'))))
     {
-        $self->{oManifest}->variableSet($strVariableKey, '[Test Variable]', true);
+        $self->{oManifest}->variableSet($oCommand->paramGet('variable-key'), '[Test Variable]', true);
     }
 
     # Return from function and log return values if any
