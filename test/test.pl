@@ -320,12 +320,12 @@ eval
     if ($strVm ne 'none')
     {
         # Load the doc module dynamically since it is not supported on all systems
-        use lib dirname($0) . '/../doc/lib';
+        use lib dirname(abs_path($0)) . '/../doc/lib';
         require BackRestDoc::Common::Doc;
         BackRestDoc::Common::Doc->import();
 
         # Make sure version number matches the latest release
-        my $strReleaseFile = dirname(dirname($0)) . '/doc/xml/release.xml';
+        my $strReleaseFile = dirname(dirname(abs_path($0))) . '/doc/xml/release.xml';
         my $oReleaseDoc = new BackRestDoc::Common::Doc($strReleaseFile);
 
         foreach my $oRelease ($oReleaseDoc->nodeGet('release-list')->nodeList('release'))
