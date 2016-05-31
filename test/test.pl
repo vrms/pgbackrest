@@ -627,19 +627,22 @@ eval
 
                     # Build up command line for the individual test
                     $strCommandLine =~ s/\-\-os\=\S*//g;
-                    $strCommandLine =~ s/\-\-test-path\=\S*//g;
+                    $strCommandLine =~ s/\-\-test\-path\=\S*//g;
                     $strCommandLine =~ s/\-\-module\=\S*//g;
                     $strCommandLine =~ s/\-\-test\=\S*//g;
                     $strCommandLine =~ s/\-\-run\=\S*//g;
                     $strCommandLine =~ s/\-\-db\-version\=\S*//g;
+                    $strCommandLine =~ s/\-\-no\-lint\S*//g;
+                    $strCommandLine =~ s/\-\-process\-max\=\S*//g;
 
                     my $strCommand =
-                        "docker exec -i -u vagrant ${strImage} ${strBackRestBase}/test/test.pl ${strCommandLine} --test-path=${strVmTestPath}" .
+                        "docker exec -i -u vagrant ${strImage} ${strBackRestBase}/test/test.pl ${strCommandLine}" .
                         " --vm=none --module=$$oTest{module} --test=$$oTest{test}" .
                         (defined($$oTest{run}) ? " --run=$$oTest{run}" : '') .
                         (defined($$oTest{thread}) ? " --thread-max=$$oTest{thread}" : '') .
                         (defined($$oTest{db}) ? " --db-version=$$oTest{db}" : '') .
                         ($bDryRun ? " --dry-run" : '') .
+                        " --test-path=${strVmTestPath}" .
                         " --no-cleanup --vm-out";
 
                     &log(DEBUG, $strCommand);
