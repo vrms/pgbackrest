@@ -187,16 +187,10 @@ sub new
             {
                 $self->{oReference} =
                     new BackRestDoc::Common::DocConfig(${$self->{oManifest}->sourceGet('reference')}{doc}, $self);
-
-                require BackRestDoc::Custom::DocCustomRelease;
-                BackRestDoc::Custom::DocCustomRelease->import();
-
-                $self->{oRelease} =
-                    new BackRestDoc::Custom::DocCustomRelease(${$self->{oManifest}->sourceGet('release')}{doc}, $self);
             }
         }
 
-        if (defined($$oRenderOut{source}) && $$oRenderOut{source} eq 'reference')
+        if (defined($$oRenderOut{source}) && $$oRenderOut{source} eq 'reference' && $self->{oManifest}->isBackRest())
         {
             if ($self->{strRenderOutKey} eq 'configuration')
             {
@@ -211,9 +205,13 @@ sub new
                 confess &log(ERROR, "cannot render $self->{strRenderOutKey} from source $$oRenderOut{source}");
             }
         }
-        elsif (defined($$oRenderOut{source}) && $$oRenderOut{source} eq 'release')
+        elsif (defined($$oRenderOut{source}) && $$oRenderOut{source} eq 'release' && $self->{oManifest}->isBackRest())
         {
-            $self->{oDoc} = $self->{oRelease}->docGet();
+            require BackRestDoc::Custom::DocCustomRelease;
+            BackRestDoc::Custom::DocCustomRelease->import();
+
+            $self->{oDoc} =
+                (new BackRestDoc::Custom::DocCustomRelease(${$self->{oManifest}->sourceGet('release')}{doc}, $self))->docGet();
         }
         else
         {
