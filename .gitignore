@@ -8,3 +8,4 @@ test/nytprof.out
 test/nytprof/*
 doc/output/*
 doc/doc/output/*
+pkg
